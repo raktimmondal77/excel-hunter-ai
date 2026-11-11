@@ -148,3 +148,109 @@ def get_monthly_summary(target_month: Optional[str] = None, include_samples: boo
         "gap_to_min": max(TARGET_MIN_INR - total_net, 0.0),
         "gap_to_max": max(TARGET_MAX_INR - total_net, 0.0),
     }
+
+def get_performance_analytics(include_samples: bool = True) -> Dict[str, Any]:
+    """
+    Computes Stage 3 comprehensive performance analytics integrating
+    the application pipeline and actual realized earnings.
+    Strictly keeps project value, completed revenue, and money actually received separate.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # 1. Application Pipeline Counts
+    cursor.execute("SELECT COUNT(*) FROM applications")
+    total_applications = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM applications
+        WHERE status IN ('Submitted', 'applied', 'Client Replied', 'Interview', 'Negotiation', 'Awarded', 'Completed', 'Rejected')
+    """)
+    proposals_submitted = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM applications
+        WHERE status IN ('Client Replied', 'Interview', 'Negotiation', 'Awarded', 'Completed')
+    """)
+    client_replies = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM applications
+        WHERE status IN ('Interview')
+    """)
+    interviews_count = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM applications
+        WHERE status IN ('Awarded', 'Completed', 'won')
+    """)
+    projects_awarded = cursor.fetchone()[0]
+
+    cursor.execute("""
+        SELECT COUNT(*) FROM applications
+        WHERE status IN ('Completed')
+    """)
+    projects_completed = cursor.fetchone()[0]
+
+    # Total Project Value (Contract value of awarded/completed projects)
+    cursor.execute("""
+        SELECT COALESCE(SUM(COALESCE(proposed_amount, bid_amount)), 0)
+        FROM applications
+        WHERE status IN ('Awarded', 'Completed', 'won')
+    """)
+    total_project_value = float(cursor.fetchone()[0] or 0.0)
+
+    # 2. Realized Earnings (Money actually received)
+    earnings_query = """
+        SELECT
+            COALESCE(SUM(CASE WHEN status = 'received' THEN net_amount ELSE 0 END), 0) AS amount_received,
+            COALESCE(SUM(CASE WHEN status = 'expected' THEN net_amount ELSE 0 END), 0) AS expected_earnings
+        FROM earnings
+        WHERE 1=1
+    """
+    if not include_samples:
+        earnings_query += " AND is_sample = 0"
+
+    cursor.execute(earnings_query)
+    e_row = cursor.fetchone()
+    amount_received = float(e_row["amount_received"] or 0.0)
+    expected_earnings = float(e_row["expected_earnings"] or 0.0)
+
+    # Outstanding payments = project value - amount received
+    outstanding_payments = max(0.0, total_project_value - amount_received)
+
+    # Conversion Rates
+    success_rate = round((projects_awarded / proposals_submitted * 100), 1) if proposals_submitted > 0 else 0.0
+    reply_rate = round((client_replies / proposals_submitted * 100), 1) if proposals_submitted > 0 else 0.0
+
+    # 3. Distributions
+    apps_df = pd.read_sql_query("SELECT status, platform, COALESCE(proposed_amount, bid_amount) as amount FROM applications", conn)
+    
+    earn_query = "SELECT platform, net_amount, date_received FROM earnings WHERE 1=1"
+    if not include_samples:
+        earn_query += " AND is_sample = 0"
+    earn_df = pd.read_sql_query(earn_query, conn)
+
+    conn.close()
+
+    status_dist = apps_df["status"].value_counts().to_dict() if not apps_df.empty else {}
+    platform_apps_dist = apps_df["platform"].value_counts().to_dict() if not apps_df.empty else {}
+    platform_earn_dist = earn_df.groupby("platform")["net_amount"].sum().to_dict() if not earn_df.empty else {}
+
+    return {
+        "total_applications": total_applications,
+        "proposals_submitted": proposals_submitted,
+        "client_replies": client_replies,
+        "interviews_count": interviews_count,
+        "projects_awarded": projects_awarded,
+        "projects_completed": projects_completed,
+        "total_project_value": total_project_value,
+        "amount_received": amount_received,
+        "outstanding_payments": outstanding_payments,
+        "expected_earnings": expected_earnings,
+        "success_rate_pct": success_rate,
+        "reply_rate_pct": reply_rate,
+        "status_distribution": status_dist,
+        "platform_apps_distribution": platform_apps_dist,
+        "platform_earnings_distribution": platform_earn_dist
+    }

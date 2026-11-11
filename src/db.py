@@ -134,7 +134,39 @@ def init_db(db_path: Optional[Path] = None) -> None:
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_runs_time ON discovery_runs(run_timestamp);")
 
-    # Safe Schema Migrations (Adding Stage 2 columns to existing tables if missing)
+    # Table: user_profile (Stage 3)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        excel_skills TEXT NOT NULL DEFAULT '[]',
+        other_tools TEXT NOT NULL DEFAULT '[]',
+        experience_level TEXT DEFAULT 'Beginner',
+        work_experience_desc TEXT DEFAULT '',
+        completed_projects_desc TEXT DEFAULT '',
+        industry_knowledge TEXT DEFAULT '',
+        hours_per_week REAL DEFAULT 15.0,
+        preferred_duration TEXT DEFAULT '1-2 weeks',
+        min_budget REAL DEFAULT 1500.0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Table: user_portfolio (Stage 3)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_portfolio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_title TEXT NOT NULL,
+        project_description TEXT,
+        skills_used TEXT,
+        portfolio_link TEXT,
+        completion_status TEXT DEFAULT 'Completed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Safe Schema Migrations (Adding Stage 2 & 3 columns to existing tables if missing)
     def add_col_if_missing(table_name: str, col_name: str, col_type: str):
         cursor.execute(f"PRAGMA table_info({table_name});")
         existing_cols = [r["name"].lower() for r in cursor.fetchall()]
@@ -151,6 +183,21 @@ def init_db(db_path: Optional[Path] = None) -> None:
     # platform_accounts table extensions
     add_col_if_missing("platform_accounts", "connection_status", "TEXT DEFAULT 'Not Connected'")
     add_col_if_missing("platform_accounts", "last_checked_date", "TEXT")
+
+    # applications table extensions (Stage 3)
+    add_col_if_missing("applications", "project_title", "TEXT")
+    add_col_if_missing("applications", "client_name", "TEXT")
+    add_col_if_missing("applications", "proposed_amount", "REAL")
+    add_col_if_missing("applications", "date_prepared", "TEXT")
+    add_col_if_missing("applications", "date_submitted", "TEXT")
+    add_col_if_missing("applications", "next_follow_up_date", "TEXT")
+    add_col_if_missing("applications", "client_response", "TEXT")
+    add_col_if_missing("applications", "interview_date", "TEXT")
+    add_col_if_missing("applications", "final_outcome", "TEXT")
+    add_col_if_missing("applications", "notes", "TEXT")
+
+    # Unique index for duplicate application prevention on same platform
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_job_platform ON applications(job_id, platform);")
 
     conn.commit()
     conn.close()
