@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from src.discovery.base_adapter import BaseSourceAdapter, StandardJob
+from src.currency import to_inr, normalize_currency_code
 
 class UpworkManualAdapter(BaseSourceAdapter):
     """
@@ -43,19 +44,15 @@ class UpworkManualAdapter(BaseSourceAdapter):
         title = lines[0] if lines else "Upwork Excel Opportunity"
         
         # Extract budget if present in text (e.g. "$50", "₹5,000", "Fixed-price: $100")
-        budget_match = re.search(r"(\$|₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", text, re.IGNORECASE)
+        budget_match = re.search(r"(\$|₹|rs\.?|inr|usd|eur|gbp)\s*([\d,]+(?:\.\d+)?)", text, re.IGNORECASE)
         budget_val = 0.0
         currency = "INR"
 
         if budget_match:
-            curr_symbol = budget_match.group(1).lower()
+            symbol = budget_match.group(1).lower()
             raw_amount = float(budget_match.group(2).replace(",", ""))
-            if "$" in curr_symbol:
-                budget_val = raw_amount * 85.0 # Convert USD to approx INR
-                currency = "INR"
-            else:
-                budget_val = raw_amount
-                currency = "INR"
+            code = normalize_currency_code(symbol)
+            budget_val = to_inr(raw_amount, code)  # always stored in INR
 
         # Check for client rating
         client_info = "Upwork Client"
