@@ -20,16 +20,18 @@ def test_standard_job_to_dict():
     assert "date_posted" in d
     assert d["discovery_source"] == "test"
 
-def test_freelancer_adapter_fallback():
+def test_freelancer_adapter_live_or_clean():
     adapter = FreelancerAdapter(auth_token="")
     conn_info = adapter.test_connection()
-    assert conn_info["status"] == "API access pending"
+    assert conn_info["status"] in ["Connected", "Not Connected"]
+    assert "message" in conn_info
 
-    # Fetch jobs without token returns verified live sample schema
-    jobs = adapter.fetch_jobs(["dashboard", "vba"])
-    assert len(jobs) >= 2
+    # Fetch jobs without token queries public active endpoint or cleanly returns empty list on network error
+    jobs = adapter.fetch_jobs(["excel"], max_results=5)
+    assert isinstance(jobs, list)
     assert all(isinstance(j, StandardJob) for j in jobs)
     assert all(j.platform == "Freelancer.com" for j in jobs)
+    assert all(getattr(j, "is_sample", 0) == 0 for j in jobs)
 
 def test_upwork_manual_adapter_parsing():
     adapter = UpworkManualAdapter()

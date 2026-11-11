@@ -8,8 +8,9 @@ class FreelancerAdapter(BaseSourceAdapter):
     """
     Official Freelancer.com REST API Adapter.
     Uses official endpoint: https://www.freelancer.com/api/projects/0.1/projects/active/
-    Read-only discovery compliant with Freelancer Developer Terms.
+    Read-only project discovery compliant with Freelancer Developer Terms.
     No scraping, no automated bidding.
+    Never inserts fake or demonstration projects.
     """
 
     def __init__(self, auth_token: Optional[str] = None):
@@ -22,58 +23,72 @@ class FreelancerAdapter(BaseSourceAdapter):
         self.api_url = "https://www.freelancer.com/api/projects/0.1/projects/active/"
 
     def test_connection(self) -> Dict[str, Any]:
-        """Tests connectivity to Freelancer API."""
-        if not self.auth_token:
+        """Tests connectivity to official Freelancer API."""
+        headers = {"User-Agent": "ExcelHunterAI/2.5"}
+        if self.auth_token:
+            headers["Freelancer-Developer-Auth-V1"] = self.auth_token
+
+        try:
+            resp = requests.get(f"{self.api_url}?compact=true&limit=1&query=excel", headers=headers, timeout=6)
+            if resp.status_code == 200:
+                auth_mode = "Authorized Token" if self.auth_token else "Public Read-Only"
+                return {
+                    "status": "Connected",
+                    "message": f"Freelancer REST API is responding ({auth_mode}).",
+                    "healthy": True
+                }
+            elif resp.status_code == 401 or resp.status_code == 403:
+                return {
+                    "status": "Not Connected",
+                    "message": "Authentication required. Generate a free developer token at https://www.freelancer.com/developers",
+                    "healthy": False
+                }
+            else:
+                return {
+                    "status": "Not Connected",
+                    "message": f"HTTP {resp.status_code}: {resp.text[:100]}",
+                    "healthy": False
+                }
+        except Exception as e:
             return {
-                "status": "API access pending",
-                "message": "Free Developer Token not configured. You can generate a free token at https://www.freelancer.com/developers",
+                "status": "Not Connected",
+                "message": f"Network exception: {str(e)}",
                 "healthy": False
             }
-        try:
-            headers = {"Freelancer-Developer-Auth-V1": self.auth_token}
-            resp = requests.get(f"{self.api_url}?compact=true&limit=1", headers=headers, timeout=5)
-            if resp.status_code == 200:
-                return {"status": "Connected", "message": "Official Freelancer REST API is responding.", "healthy": True}
-            else:
-                return {"status": "Error", "message": f"HTTP {resp.status_code}: {resp.text[:100]}", "healthy": False}
-        except Exception as e:
-            return {"status": "Error", "message": f"Network exception: {str(e)}", "healthy": False}
 
     def fetch_jobs(self, search_terms: List[str], max_results: int = 10) -> List[StandardJob]:
         """
-        Fetches active Excel projects from Freelancer API.
-        If no token is supplied, returns demonstrative live sample projects matching
-        the official Freelancer project schema.
+        Fetches genuine active Excel projects from Freelancer API.
+        Never returns simulated or fake fallback data. If no projects exist or call fails, returns [].
         """
         jobs: List[StandardJob] = []
 
-        if not self.auth_token:
-            # Informative fallback compliant with zero-cost beginner setup
-            return self._get_fallback_sample_projects()
+        headers = {"User-Agent": "ExcelHunterAI/2.5"}
+        if self.auth_token:
+            headers["Freelancer-Developer-Auth-V1"] = self.auth_token
 
-        headers = {
-            "Freelancer-Developer-Auth-V1": self.auth_token,
-            "User-Agent": "ExcelHunterAI/2.0"
-        }
-
-        query_str = "Excel " + " ".join(search_terms[:2])
+        # Use clean search terms (e.g. "Excel", "Excel VBA", "Excel spreadsheet")
+        query_kw = search_terms[0] if search_terms else "excel"
         params = {
-            "query": query_str,
+            "query": query_kw,
             "compact": "true",
             "limit": min(max_results, 20)
         }
 
         try:
-            resp = requests.get(self.api_url, headers=headers, params=params, timeout=8)
+            resp = requests.get(self.api_url, headers=headers, params=params, timeout=10)
             if resp.status_code != 200:
-                return self._get_fallback_sample_projects()
+                return []
 
             data = resp.json()
             projects = data.get("result", {}).get("projects", [])
 
             for p in projects:
-                title = p.get("title", "")
-                desc = p.get("preview_description", "") or p.get("description", "")
+                title = (p.get("title") or "").strip()
+                if not title:
+                    continue
+
+                desc = (p.get("preview_description") or p.get("description") or "").strip()
                 proj_id = p.get("id")
                 seo_url = p.get("seo_url")
                 url = f"https://www.freelancer.com/projects/{seo_url}" if seo_url else f"https://www.freelancer.com/projects/{proj_id}"
@@ -81,7 +96,16 @@ class FreelancerAdapter(BaseSourceAdapter):
                 budget_info = p.get("budget", {})
                 minimum = budget_info.get("minimum", 0)
                 maximum = budget_info.get("maximum", 0)
-                avg_budget = (minimum + maximum) / 2.0 if maximum > 0 else float(minimum or 0)
+                
+                # Real budget calculation without inventing missing values
+                if minimum and maximum:
+                    avg_budget = (float(minimum) + float(maximum)) / 2.0
+                elif minimum:
+                    avg_budget = float(minimum)
+                elif maximum:
+                    avg_budget = float(maximum)
+                else:
+                    avg_budget = 0.0
 
                 currency = p.get("currency", {}).get("code", "INR")
                 time_submitted = p.get("time_submitted")
@@ -95,43 +119,12 @@ class FreelancerAdapter(BaseSourceAdapter):
                     budget=avg_budget,
                     currency=currency,
                     date_posted=date_posted,
-                    client_info="Freelancer Verified Employer",
-                    skills_required=["Excel", "VBA", "Data Processing"],
-                    discovery_source="freelancer_api"
+                    client_info="Freelancer Client",
+                    skills_required=["Excel", "Data Processing"],
+                    discovery_source="freelancer_api",
+                    is_sample=0 # 100% Genuine live project
                 ))
 
             return jobs
         except Exception:
-            return self._get_fallback_sample_projects()
-
-    def _get_fallback_sample_projects(self) -> List[StandardJob]:
-        """Provides verified sample jobs in official Freelancer format when no developer token is set."""
-        now_date = datetime.now().strftime("%Y-%m-%d")
-        return [
-            StandardJob(
-                title="Excel VBA Macro for Consolidating Daily Inventory Sheets",
-                description="Need an experienced Excel developer to write a clean VBA macro. The macro should read 10 separate CSV warehouse files and merge them into a single master sheet with date formatting and total sums.",
-                platform="Freelancer.com",
-                url="https://www.freelancer.com/projects/excel/vba-inventory-consolidation-live",
-                budget=7500.0,
-                currency="INR",
-                date_posted=now_date,
-                client_info="Employer in India (5.0 stars, 12 reviews)",
-                skills_required=["Excel", "VBA", "Data Processing"],
-                discovery_source="freelancer_api",
-                is_sample=1
-            ),
-            StandardJob(
-                title="Complex Financial Formula & XLOOKUP Repair",
-                description="Our quarterly balance sheet model has broken formula references (#N/A and #VALUE errors). Need an Excel specialist to audit formulas and convert deprecated VLOOKUPs to dynamic XLOOKUP.",
-                platform="Freelancer.com",
-                url="https://www.freelancer.com/projects/excel/financial-formula-repair-live",
-                budget=4000.0,
-                currency="INR",
-                date_posted=now_date,
-                client_info="UK Employer, Payment Verified",
-                skills_required=["Excel", "Financial Modeling", "Formulas"],
-                discovery_source="freelancer_api",
-                is_sample=1
-            )
-        ]
+            return []
