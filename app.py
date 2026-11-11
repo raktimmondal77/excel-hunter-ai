@@ -381,7 +381,11 @@ elif st.session_state["selected_page"] == "🔍 Find Excel Jobs":
     </div>
     """, unsafe_allow_html=True)
 
-    tab_find, tab_paste = st.tabs(["⚡ Search Public Sources", "🔗 Paste a Job Link / Description"])
+    tab_find, tab_paste, tab_browse = st.tabs([
+        "⚡ Search Public Sources",
+        "🔗 Paste a Job Link / Description",
+        "🌐 Top Platforms to Apply for Free (No $20 Fee)"
+    ])
 
     with tab_find:
         st.write("Click this button to scan Freelancer.com plus 4 free remote job feeds (Remotive, RemoteOK, Jobicy, Working Nomads) for fresh Excel work:")
@@ -563,6 +567,87 @@ elif st.session_state["selected_page"] == "🔍 Find Excel Jobs":
                         st.warning(msg)
                 else:
                     st.warning("Please fill in both Title and Description.")
+
+    with tab_browse:
+        st.markdown("""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 8px 0; color: #0F172A;">💡 Why did Freelancer.com ask for $20?</h4>
+            <p style="margin: 0; color: #475569; font-size: 0.92rem; line-height: 1.5;">
+                Freelancer.com places a deposit barrier on brand-new accounts or "featured/restricted" projects to prevent spam bots.
+                <b>DO NOT pay $20.</b> Freelancing with Excel should cost you ₹0. Below are the best platforms where you can apply for genuine Excel freelance work <b>100% free</b> with zero deposit required.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("### 🌐 Best Free Platforms for Excel Freelancers (₹0 Deposit)")
+
+        c_p1, c_p2 = st.columns(2)
+
+        with c_p1:
+            st.markdown("""
+            <div class="app-card">
+                <div style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">1. Upwork (Global Freelance Standard)</div>
+                <div style="margin: 4px 0;"><span class="badge badge-green">Free to Join</span> <span class="badge badge-blue">USD / INR</span></div>
+                <p style="color: #475569; font-size: 0.88rem; line-height: 1.5; margin: 8px 0;">
+                    Upwork provides free connects upon signup. Top place for Excel data cleaning, formula fixes, and dashboard builds. Never asks for a deposit to bid on normal jobs.
+                </p>
+                <a href="https://www.upwork.com/nx/search/jobs/?q=excel%20dashboard%20OR%20excel%20data%20entry%20OR%20spreadsheet&sort=recency" target="_blank" style="display: inline-block; background: #10B981; color: white; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">
+                    🔎 Open Live Upwork Excel Jobs ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("""
+            <div class="app-card">
+                <div style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">3. Truelancer (Top for Indian Freelancers)</div>
+                <div style="margin: 4px 0;"><span class="badge badge-green">Free 20 Bids/Mo</span> <span class="badge badge-amber">Direct INR / UPI</span></div>
+                <p style="color: #475569; font-size: 0.88rem; line-height: 1.5; margin: 8px 0;">
+                    Extremely popular for domestic Indian businesses. Clients pay in INR directly into Indian bank accounts. Perfect for Excel MIS reports, sales trackers, and data entry.
+                </p>
+                <a href="https://www.truelancer.com/freelance-jobs/excel" target="_blank" style="display: inline-block; background: #2563EB; color: white; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">
+                    🔎 Open Live Truelancer Excel Jobs ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with c_p2:
+            st.markdown("""
+            <div class="app-card">
+                <div style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">2. Fiverr (Clients Order From You!)</div>
+                <div style="margin: 4px 0;"><span class="badge badge-green">No Bidding Required</span> <span class="badge badge-purple">Gigs Model</span></div>
+                <p style="color: #475569; font-size: 0.88rem; line-height: 1.5; margin: 8px 0;">
+                    On Fiverr, you don't fight for bids. You create a gig like <i>"I will clean, organize, and format your Excel spreadsheet"</i> starting at $15–$30. Clients order directly from you!
+                </p>
+                <a href="https://www.fiverr.com/search/gigs?query=excel%20data%20cleaning" target="_blank" style="display: inline-block; background: #1DBF73; color: white; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">
+                    🔎 See What Sells on Fiverr ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("""
+            <div class="app-card">
+                <div style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">4. Internshala (Remote Excel Contracts)</div>
+                <div style="margin: 4px 0;"><span class="badge badge-green">100% Free</span> <span class="badge badge-blue">₹10,000–₹25,000/mo</span></div>
+                <p style="color: #475569; font-size: 0.88rem; line-height: 1.5; margin: 8px 0;">
+                    Tailored specifically for Indian beginners and college graduates. Look for Work-From-Home "Data Entry / MIS / Excel Reporting" contracts. Consistent monthly stipend.
+                </p>
+                <a href="https://internshala.com/internships/work-from-home-excel,data-entry-internships" target="_blank" style="display: inline-block; background: #008BDC; color: white; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">
+                    🔎 Open Internshala Work-From-Home ↗
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 12px; padding: 16px 20px; margin-top: 16px;">
+            <b style="color: #065F46;">How to use EXCEL HUNTER AI with these platforms:</b>
+            <ol style="margin: 8px 0 0 16px; color: #047857; font-size: 0.9rem; line-height: 1.5;">
+                <li>Click any link above and find a job you like.</li>
+                <li>Copy the job's title, budget, and description.</li>
+                <li>Go to the <b>"🔗 Paste a Job Link / Description"</b> tab above and paste it.</li>
+                <li>EXCEL HUNTER AI will instantly evaluate the job, check your skill match, suggest a quote, and write your tailored proposal!</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
 
 # =============================================================
 # 3. JOB ASSISTANT (ADVICE + PROPOSAL IN ONE EASY PLACE)

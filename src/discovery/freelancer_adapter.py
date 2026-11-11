@@ -135,6 +135,17 @@ class FreelancerAdapter(BaseSourceAdapter):
 
                     desc = (p.get("preview_description") or p.get("description") or "").strip()
 
+                    # ---- Filter out locked / deposit-gated projects ----
+                    upgrades = p.get("upgrades", {}) or {}
+                    if (
+                        upgrades.get("featured") or upgrades.get("sealed") or
+                        upgrades.get("nonpublic") or upgrades.get("NDA") or
+                        upgrades.get("pf_only") or p.get("featured")
+                    ):
+                        seen_ids.add(proj_id)
+                        self.filtered_count += 1
+                        continue
+
                     # ---- STRICT Excel relevance gate (kills fuzzy junk) ----
                     if not is_excel_job(title, desc):
                         seen_ids.add(proj_id)
