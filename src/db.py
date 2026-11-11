@@ -104,5 +104,53 @@ def init_db(db_path: Optional[Path] = None) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_applications_followup ON applications(follow_up_date);")
 
+    # Table: fiverr_gigs (Stage 2)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS fiverr_gigs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gig_title TEXT NOT NULL,
+        gig_url TEXT,
+        target_keywords TEXT,
+        status TEXT DEFAULT 'Active',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # Table: discovery_runs (Stage 2)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS discovery_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        sources_scanned TEXT NOT NULL,
+        jobs_found INTEGER DEFAULT 0,
+        duplicates_skipped INTEGER DEFAULT 0,
+        errors_logged INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'completed',
+        summary_notes TEXT
+    );
+    """)
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_runs_time ON discovery_runs(run_timestamp);")
+
+    # Safe Schema Migrations (Adding Stage 2 columns to existing tables if missing)
+    def add_col_if_missing(table_name: str, col_name: str, col_type: str):
+        cursor.execute(f"PRAGMA table_info({table_name});")
+        existing_cols = [r["name"].lower() for r in cursor.fetchall()]
+        if col_name.lower() not in existing_cols:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type};")
+
+    # jobs table extensions
+    add_col_if_missing("jobs", "deadline", "TEXT")
+    add_col_if_missing("jobs", "skills_required", "TEXT")
+    add_col_if_missing("jobs", "discovery_source", "TEXT")
+    add_col_if_missing("jobs", "date_discovered", "TEXT")
+    add_col_if_missing("jobs", "category", "TEXT")
+
+    # platform_accounts table extensions
+    add_col_if_missing("platform_accounts", "connection_status", "TEXT DEFAULT 'Not Connected'")
+    add_col_if_missing("platform_accounts", "last_checked_date", "TEXT")
+
     conn.commit()
     conn.close()

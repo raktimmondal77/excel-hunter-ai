@@ -1,177 +1,154 @@
-# 🎯 EXCEL HUNTER AI
+# 🎯 EXCEL HUNTER AI — Stage 2: Job Discovery Engine & Multi-Platform Manager
 
 > **A Zero-Cost, Windows-Based Excel Freelance Job Hunting Assistant**  
-> Target Monthly Income: **₹10,000 – ₹20,000** | Budget: **₹0** (No paid APIs or recurring fees)
+> Target Monthly Income: **₹10,000 – ₹20,000** | Budget: **₹0** (No paid APIs or recurring subscriptions)
 
 ---
 
 ## 📌 1. Project Overview
 
-**EXCEL HUNTER AI** is designed specifically for Excel freelancers who want to discover legitimate client projects, score opportunities, screen out fraudulent posts, manage application pipelines, and track their monthly income targets towards ₹10,000 and ₹20,000.
+**EXCEL HUNTER AI** is built specifically for Excel freelancers seeking legitimate client contracts in:
+- **Excel Dashboards & KPI Summaries**
+- **Excel Automation & VBA Macros**
+- **Advanced Formulas (XLOOKUP, INDEX/MATCH, Dynamic Arrays)**
+- **MIS & Executive Reporting**
+- **Data Cleaning & Deduplication**
+- **Spreadsheet Formatting & Templates**
+- **Excel Trackers (Inventory, Attendance, Budget)**
+- **Business & Operations Reporting**
+- **Custom Excel Workflow Systems**
 
-### Key Highlights for Stage 1:
-- **100% Free & Local**: Operates completely on your Windows computer with zero API costs.
-- **Offline Persistence**: Uses a local SQLite database (`data/excel_hunter.db`). Your data is preserved even when your PC is turned off or restarted.
-- **Smart Scoring & Risk Detection**: Evaluates match quality for core Excel skills (Dashboards, MIS reporting, Formulas, XLOOKUP, VBA/Macros, Data Cleaning) and flags suspicious posts (registration fees, crypto, telegram off-platform contact).
-- **Intelligent Deduplication**: Automatically blocks identical URLs and normalized titles so you never review duplicate posts.
-- **Interactive Streamlit Dashboard**: Clean visual interface with pipeline tracking, filters, and earnings progress bars.
-- **CSV Import & Export**: Import freelance leads from CSV or export filtered job lists for offline review.
+### Stage 2 Capabilities:
+- **Modular Job Discovery Engine**: Scans active sources (Freelancer.com REST API, Permitted Public Feeds, Upwork manual feeds) with instant duplicate suppression.
+- **Universal Job Importer**: Ingest opportunities via pasted URLs, raw pasted client messages, email alert notifications, or CSV files.
+- **Job Intelligence & 100-Point Weighted Scoring**: Calibrated specifically for ₹10k–₹20k monthly milestones with automated fraud screening.
+- **Platform Account Manager**: Manage Freelancer.com, Fiverr, Upwork, PeoplePerHour, Truelancer, and Guru settings with strict **Zero-Credential Security** (no passwords or tokens stored).
+- **Fiverr Gig & Buyer Request Manager**: Track your live Fiverr Gigs and manually ingest client inquiries without violating marketplace terms.
+- **Windows Task Scheduler Automation**: Standalone worker (`run_discovery.py`) runs on-demand or on schedule, logging results to SQLite.
 
 ---
 
-## 💻 2. Windows Environment & Prerequisites
+## 💻 2. Prerequisites & Installation
 
-### Checked on Your System:
+### Checked on Your Windows System:
 - **Operating System:** Windows 10/11
 - **Python:** Python 3.14.5 is installed
 - **Pip:** pip 26.1.1 is installed
 
-### Required Libraries:
-The project uses standard, open-source Python packages:
-- `streamlit` (interactive web UI dashboard)
-- `pandas` (tabular data manipulation)
-- `openpyxl` (Excel workbook handling)
-- `pytest` (automated testing framework)
-
-To install or verify them anytime, run:
+### Required Packages:
+Standard open-source libraries (`streamlit`, `pandas`, `openpyxl`, `requests`, `pytest`).  
+Install or update anytime:
 ```powershell
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🚀 3. Quick Start: How to Run
+## 🚀 3. Quick Start: Launching the App
 
-### Step 1: Open Terminal in the Project Folder
-Open PowerShell or Command Prompt, and navigate to the project directory:
+### Option A: 1-Click Launcher
+Double-click [`run_dashboard.bat`](file:///d:/PROJECTS/EXCE%20FINDING%20AI/run_dashboard.bat) in the project folder.
+
+### Option B: From PowerShell or Command Prompt
 ```powershell
 cd "d:\PROJECTS\EXCE FINDING AI"
-```
-
-### Step 2: Launch the Streamlit Dashboard
-Run:
-```powershell
 python -m streamlit run app.py
 ```
-> **Tip for Beginners:** Using `python -m streamlit run app.py` avoids any PATH configuration issues on Windows.
-
-Your default web browser will automatically open to:
-```
-http://localhost:8501
-```
+Open your browser to: `http://localhost:8501`
 
 ---
 
-## 📂 4. Project Structure
+## 🔍 4. Running the Job Discovery Scanner
+
+### Method 1: From the Streamlit Dashboard
+1. Open the **"🔍 Job Discovery & Scanner"** module in the sidebar.
+2. Select your target keywords (e.g. `Excel dashboard`, `Excel automation`, `MIS executive freelance`).
+3. Click **"🚀 Run Discovery Scan Now"**.
+4. The scanner evaluates opportunities, skips duplicates, and updates your repository.
+
+### Method 2: Running via Command Line (Windows Automation)
+You can run a scan directly without opening a browser:
+```powershell
+python run_discovery.py
+```
+
+### Method 3: Scheduling via Windows Task Scheduler
+1. Open Windows **Task Scheduler** (`taskschd.msc`).
+2. Click **Create Basic Task** ➔ Name: `Excel Hunter AI Discovery`.
+3. Trigger: **When I log on** or **Daily at 9:00 AM**.
+4. Action: **Start a program** ➔ Program: `python.exe` ➔ Arguments: `run_discovery.py` ➔ Start in: `d:\PROJECTS\EXCE FINDING AI`.
+5. Progress is saved after every scan and resumes safely after computer restarts.
+
+---
+
+## 📂 5. Project Architecture
 
 ```
 EXCE FINDING AI/
-├── app.py                      # Main Streamlit command center dashboard
-├── requirements.txt            # Python dependencies (Streamlit, Pandas, OpenPyXL, Pytest)
-├── README.md                   # Beginner's documentation and guide
+├── app.py                      # Streamlit Command Center (10 complete modules)
+├── run_dashboard.bat           # 1-Click Windows dashboard launcher
+├── run_discovery.py            # Standalone discovery automation runner
+├── requirements.txt            # Free open-source Python dependencies
+├── README.md                   # Complete documentation and user guide
 ├── data/
-│   ├── excel_hunter.db         # Local SQLite database (auto-created on launch)
-│   └── sample_jobs.csv         # Sample CSV file for testing manual import
+│   ├── excel_hunter.db         # Local SQLite database (restart-safe persistence)
+│   └── sample_jobs.csv         # Sample CSV file for testing batch imports
 ├── src/
-│   ├── __init__.py
-│   ├── config.py               # Constants, monthly income goals, status types
-│   ├── db.py                   # SQLite database initialization & connection helper
-│   ├── evaluation.py           # Skill matching score (0-100) & risk/fraud detection
-│   ├── job_manager.py          # Job CRUD, deduplication, CSV import/export
-│   ├── earnings_tracker.py     # Monthly income calculations, fees, and targets
-│   ├── platform_manager.py     # Multi-platform accounts & policy compliance
-│   ├── proposal_generator.py   # Honest tailored proposal generation engine
-│   ├── application_tracker.py  # Application submissions, client replies & follow-ups
-│   └── sample_data.py          # Clearly-labeled demonstration records
+│   ├── config.py               # 10 categories, search terms, integration states, targets
+│   ├── db.py                   # SQLite tables, indexes, and safe migrations
+│   ├── evaluation.py           # 100-point weighted scoring engine & fraud screening
+│   ├── job_manager.py          # Job repository CRUD, deduplication, CSV import/export
+│   ├── earnings_tracker.py     # Monthly targets (₹10k / ₹20k), fee deductions, net ledger
+│   ├── platform_manager.py     # Multi-platform accounts (Freelancer, Fiverr, Upwork, etc.)
+│   ├── fiverr_manager.py       # Fiverr Gig manager & manual buyer request ingestion
+│   ├── proposal_generator.py   # Truthful, skill-matched tailored proposal generator
+│   ├── application_tracker.py  # Application submissions, status sync & follow-up scheduler
+│   └── discovery/
+│       ├── __init__.py
+│       ├── base_adapter.py     # StandardJob dataclass & BaseSourceAdapter
+│       ├── freelancer_adapter.py # Official Freelancer REST API adapter
+│       ├── upwork_adapter.py   # Upwork manual URL & email alert parser
+│       ├── public_feed_adapter.py # Permitted public remote feeds (Remotive / Open RSS)
+│       ├── universal_importer.py # Pasted URLs, raw text briefs & email alert parser
+│       └── engine.py           # Multi-source discovery orchestrator & audit logger
 └── tests/
-    ├── __init__.py
-    ├── test_db.py              # Tests for database tables and schema
-    ├── test_duplicates.py      # Tests for URL and title deduplication
-    ├── test_csv_import.py      # Tests for CSV import and scam detection
-    ├── test_earnings.py        # Tests for fee calculation & monthly targets
-    ├── test_safety.py          # Tests for data safety, persistence & CSV resilience
-    ├── test_platform_manager.py# Tests for platform settings & zero-credential security
-    ├── test_proposal_generator.py # Tests for truthful tailored proposals
-    └── test_application_tracker.py# Tests for application lifecycle & follow-up alerts
+    ├── test_application_tracker.py
+    ├── test_csv_import.py
+    ├── test_db.py
+    ├── test_discovery_adapters.py
+    ├── test_discovery_engine.py
+    ├── test_duplicates.py
+    ├── test_earnings.py
+    ├── test_evaluation_v2.py
+    ├── test_fiverr_manager.py
+    ├── test_platform_manager.py
+    ├── test_proposal_generator.py
+    ├── test_safety.py
+    └── test_universal_importer.py
 ```
 
 ---
 
-## 🧭 5. How to Use the Modules
+## 🧭 6. Platform Access & Compliance Guide
 
-### 1. 📊 Dashboard & Overview
-- Monitor progress towards **Goal 1 (₹10,000/month)** and **Goal 2 (₹20,000/month)**.
-- **Application & Opportunity Pipeline**:
-  - **Jobs Awaiting Applications**: Shortlisted jobs ready for proposal generation.
-  - **Proposals Ready for Review**: Opportunities with drafted proposals.
-  - **Applications Submitted**: Live proposals submitted to clients.
-  - **Replies & Follow-ups Due**: Check-ins due today or client responses received.
-- Check the **Fraud & Risk Detection Box** highlighting suspicious posts.
-- Review top high-priority opportunities scored 70+/100.
-
-### 2. 🚀 Job Application Assistant
-- Inspect full job briefs, skill match breakdown, and client details.
-- **1-Click Browser Launch**: Click `🌐 Open Original Job` to view the listing directly in your browser.
-- **Honest Proposal Generator**: Automatically drafts structured, honest proposals matching your verified Excel skills (Dashboards, MIS automation, XLOOKUP/formulas, VBA macros, data cleaning). Zero fabricated claims.
-- **Human Confirmation Gate**: Application logging requires checking:  
-  `☑️ "I confirm that I have reviewed this proposal and manually submitted it through the official platform website."`
-- Automatically updates job status to `applied` and schedules follow-up check-ins.
-
-### 3. 📬 Application History & Follow-ups
-- Comprehensive ledger of all submitted bids and application dates.
-- Update client progress: `applied` ➔ `replied` ➔ `interview` ➔ `won` / `lost`.
-- Automatic follow-up alerts when client check-ins are due.
-
-### 4. 🌐 Platform Accounts & Policy Control
-- Configure profiles for **Freelancer.com, Fiverr, Upwork, LinkedIn, and Direct Client**.
-- Record profile URLs, account statuses, and compliance notes.
-- **Zero-Credential Security**: No passwords, tokens, or cookies are ever requested or stored.
-- Explicit integration capability modes: Defaulted to **Manual (Human-Controlled)**.
-
-### 5. 📋 Job Repository & Pipeline
-- Filter opportunities by Platform, Pipeline Status, or Priority.
-- Search by keyword (`dashboard`, `vba`, `xlookup`).
-- Export filtered jobs as CSV.
-
-### 6. 💰 Earnings & Monthly Targets
-- Record completed or expected Excel projects.
-- Tracks Gross Billed, Platform Fees, and Net Take-Home (INR).
-- Edit or delete payment entries anytime.
-
-### 7. 📥 CSV Job Import
-- Ingest job listings from email alerts or saved search exports.
-- Intelligent deduplication automatically blocks matching URLs or normalized titles.
-
-### 8. ⚙️ Database & Settings
-- View current database statistics (Real vs Demonstration records).
-- 1-click **Delete Sample Records** button to safely clear demo data while preserving real records.
-- 1-click **Load Demonstration Records** button to explore features anytime.
+| Platform | Integration Mode | Compliance Status & How It Works |
+|---|---|---|
+| **Freelancer.com** | `Official API available` | Compliant with official Freelancer REST API. Free Developer Token can be generated at [freelancer.com/developers](https://www.freelancer.com/developers). If unconfigured, safe demonstrative records load without web scraping. |
+| **Fiverr** | `Manual` | Dedicated Gig and Buyer Request Manager. Terms strictly prohibit bot scraping; manual ingestion of buyer requirements keeps your seller account 100% compliant. |
+| **Upwork** | `Manual` | Upwork Developer API restricts public job searches to vetted enterprise partners. Upwork integration operates via manual job URL entry, raw text pasting, and CSV/email alerts. |
+| **PeoplePerHour** | `Manual` | Profile tracking and manual opportunity entry. No unauthorized web scrapers. |
+| **Truelancer** | `Manual` | Indian and international freelance opportunities tracked via manual ingestion. |
+| **Guru** | `Manual` | Project tracking and manual quoting. |
+| **Public Feeds** | `Connected` | Pulls legitimate public remote job listings via permitted open feeds (e.g. Remotive Public API). Zero cost, no API keys needed. |
 
 ---
 
-## 🧪 6. Running Automated Tests
+## 🧪 7. Running Automated Tests
 
-To verify that the database, deduplication logic, CSV ingestion, proposal generator, platform manager, and application tracker are working correctly:
+To run the complete test suite:
 
 ```powershell
 python -m pytest -v
 ```
 
-All 24 unit tests will run and pass.
-
----
-
-## 🛡️ 7. Safety & Ethical Rules Built-In
-
-1. **No Automatic Proposals**: All proposals and client communication remain strictly under your control. The system will never message a client or apply without your manual review.
-2. **Zero Financial Risk**: Never asks for credit cards, subscriptions, or paid API keys.
-3. **No Credential Storage**: No passwords or account cookies are stored in plain text.
-4. **Scam Prevention**: Proactively screens out fee-charging scams and off-platform diversions.
-
----
-
-## 🗺️ 8. Next Stages Roadmap
-
-- **Stage 2**: Permitted public job discovery feeds and email alert parsers.
-- **Stage 3**: Local, template-based proposal draft generator tailored to your verified Excel portfolio without fabricating credentials.
-- **Stage 4**: Windows Task Scheduler automation to periodically check feeds when your PC is online.
+All **38 unit tests** will run and pass green in ~10 seconds.

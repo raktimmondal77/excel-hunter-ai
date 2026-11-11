@@ -95,9 +95,18 @@ def add_job(
         score = job_data.get("score")
         priority = job_data.get("priority")
         risk_flags = job_data.get("risk_flags")
+        category = job_data.get("category")
+
+        client_info = job_data.get("client_info", "")
+        deadline = job_data.get("deadline", "")
 
         if auto_evaluate or score is None:
-            eval_score, eval_priority, eval_risks = evaluate_job(title, description, budget)
+            eval_res = evaluate_job(title, description, budget, client_info=client_info, deadline_text=deadline)
+            if len(eval_res) == 4:
+                eval_score, eval_priority, eval_risks, eval_cat = eval_res
+                category = category or eval_cat
+            else:
+                eval_score, eval_priority, eval_risks = eval_res[:3]
             score = eval_score
             priority = eval_priority
             risk_flags = json.dumps(eval_risks) if eval_risks else ""
@@ -106,22 +115,30 @@ def add_job(
 
         currency = job_data.get("currency", "INR") or "INR"
         date_posted = job_data.get("date_posted", "")
-        client_info = job_data.get("client_info", "")
         status = job_data.get("status", "discovered")
         is_sample = int(job_data.get("is_sample", 0))
         notes = job_data.get("notes", "")
+
+        skills_required = job_data.get("skills_required", "")
+        if isinstance(skills_required, list):
+            skills_required = json.dumps(skills_required)
+
+        discovery_source = job_data.get("discovery_source", "manual")
+        date_discovered = job_data.get("date_discovered", "") or date_posted
 
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO jobs (
                 title, description, platform, url, budget, currency,
                 date_posted, client_info, status, score, priority,
-                risk_flags, is_sample, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                risk_flags, is_sample, notes,
+                deadline, skills_required, discovery_source, date_discovered, category
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             title, description, platform, url, budget, currency,
             date_posted, client_info, status, score, priority,
-            risk_flags, is_sample, notes
+            risk_flags, is_sample, notes,
+            deadline, skills_required, discovery_source, date_discovered, category
         ))
         conn.commit()
         job_id = cursor.lastrowid
@@ -153,7 +170,10 @@ def get_jobs(
     platform: Optional[str] = None,
     status: Optional[str] = None,
     priority: Optional[str] = None,
+    category: Optional[str] = None,
     search_keyword: Optional[str] = None,
+    min_score: Optional[int] = None,
+    min_budget: Optional[float] = None,
     include_samples: bool = True
 ) -> pd.DataFrame:
     """Fetches jobs matching filter criteria as a pandas DataFrame."""
@@ -176,10 +196,22 @@ def get_jobs(
         query += " AND priority = ?"
         params.append(priority)
 
+    if category and category != "All":
+        query += " AND category = ?"
+        params.append(category)
+
+    if min_score is not None and min_score > 0:
+        query += " AND score >= ?"
+        params.append(min_score)
+
+    if min_budget is not None and min_budget > 0:
+        query += " AND budget >= ?"
+        params.append(min_budget)
+
     if search_keyword and search_keyword.strip():
         kw = f"%{search_keyword.strip()}%"
-        query += " AND (title LIKE ? OR description LIKE ? OR client_info LIKE ?)"
-        params.extend([kw, kw, kw])
+        query += " AND (title LIKE ? OR description LIKE ? OR client_info LIKE ? OR skills_required LIKE ?)"
+        params.extend([kw, kw, kw, kw])
 
     query += " ORDER BY id DESC"
     df = pd.read_sql_query(query, conn, params=params)

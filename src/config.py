@@ -32,11 +32,53 @@ PRIORITIES = ["High", "Medium", "Low"]
 
 # Standard Platforms
 PLATFORMS = [
-    "Upwork",
+    "Freelancer.com",
     "Fiverr",
-    "Freelancer",
-    "LinkedIn",
+    "Upwork",
+    "PeoplePerHour",
+    "Truelancer",
+    "Guru",
     "Direct Client",
-    "Internshala",
+    "LinkedIn",
     "Other"
+]
+
+# Prioritized Job Categories (Stage 2)
+JOB_CATEGORIES = [
+    "Excel dashboards",
+    "Excel automation",
+    "Excel formulas and functions",
+    "MIS reporting",
+    "Data cleaning",
+    "Spreadsheet formatting",
+    "Excel trackers",
+    "Business reporting",
+    "Operations reporting",
+    "Custom Excel systems"
+]
+
+# Standard Search Terms for Job Discovery
+SEARCH_TERMS = [
+    "Excel dashboard",
+    "Advanced Excel",
+    "Excel automation",
+    "MIS executive freelance",
+    "Excel reporting",
+    "Spreadsheet cleanup",
+    "Excel formulas",
+    "Data cleaning Excel",
+    "Pivot Table dashboard",
+    "Excel tracker",
+    "Monthly reporting",
+    "Business reporting"
+]
+
+# Integration States (Stage 2)
+INTEGRATION_STATES = [
+    "Manual",
+    "Official API available",
+    "API access pending",
+    "Connected",
+    "Temporarily unavailable",
+    "Disabled"
 ]

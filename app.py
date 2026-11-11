@@ -3,12 +3,23 @@ import pandas as pd
 import json
 from datetime import datetime, date, timedelta
 from src.db import init_db
-from src.config import JOB_STATUSES, PRIORITIES, PLATFORMS, TARGET_MIN_INR, TARGET_MAX_INR, DB_PATH, SAMPLE_CSV_PATH
+from src.config import (
+    JOB_STATUSES, PRIORITIES, PLATFORMS, JOB_CATEGORIES, SEARCH_TERMS,
+    TARGET_MIN_INR, TARGET_MAX_INR, DB_PATH, SAMPLE_CSV_PATH, INTEGRATION_STATES
+)
 import src.job_manager as jm
 import src.earnings_tracker as et
 import src.platform_manager as pm
 import src.proposal_generator as pg
 import src.application_tracker as at
+import src.fiverr_manager as fm
+from src.discovery.engine import DiscoveryEngine, get_last_discovery_run, get_discovery_history
+from src.discovery.universal_importer import (
+    import_job_from_url,
+    import_job_from_pasted_text,
+    parse_email_alert,
+    detect_platform_from_url
+)
 from src.sample_data import seed_sample_data
 
 # Set Streamlit page config
@@ -19,9 +30,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize database and platform accounts
+# Initialize database, platform records, and gigs
 init_db()
 pm.seed_default_platforms()
+fm.seed_default_fiverr_gigs()
 
 # Auto-seed sample data if database is brand new and empty
 all_jobs = jm.get_jobs()
@@ -66,12 +78,12 @@ st.markdown("""
         border-radius: 4px;
         font-weight: 600;
     }
-    .card-box {
-        background-color: #F9FAFB;
-        border: 1px solid #E5E7EB;
+    .status-card {
+        background-color: #F8FAFC;
+        border: 1px solid #E2E8F0;
         border-radius: 8px;
-        padding: 16px;
-        margin-bottom: 12px;
+        padding: 12px;
+        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -85,12 +97,14 @@ navigation = st.sidebar.radio(
     "Go to Module:",
     [
         "📊 Dashboard & Overview",
+        "🔍 Job Discovery & Scanner",
+        "📥 Universal Job Importer",
         "🚀 Application Assistant",
         "📬 Application History & Follow-ups",
         "📋 Job Repository & Pipeline",
+        "💼 Fiverr Gigs & Buyer Requests",
+        "🌐 Platform Account Manager",
         "💰 Earnings & Monthly Targets",
-        "📥 CSV Job Import",
-        "🌐 Platform Accounts & Policies",
         "⚙️ Database & Settings"
     ]
 )
@@ -98,26 +112,42 @@ navigation = st.sidebar.radio(
 include_samples = st.sidebar.checkbox("Include Sample Data", value=True, help="Toggle visibility of demonstration records.")
 
 if include_samples:
-    st.sidebar.warning("⚠️ Demo Mode: Sample demonstration records are visible. Uncheck above to view only real data.")
+    st.sidebar.warning("⚠️ Demo Mode: Sample records are visible. Uncheck to view only real data.")
 else:
     st.sidebar.success("🛡️ Production Mode: Viewing real records only.")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🛡️ Safety & Rules")
-st.sidebar.caption("• ₹0 Budget: No paid APIs or subscriptions\n• Offline-first: Data stored locally in SQLite\n• No automatic proposal sending\n• No passwords or cookies stored\n• Approval required for all client actions")
+st.sidebar.markdown("### 🛡️ Safety & Policy Rules")
+st.sidebar.caption("• ₹0 Budget: No paid APIs or subscriptions\n• Offline-first: Data stored locally in SQLite\n• Zero bot scraping or automated bidding\n• No passwords or tokens stored in plain text\n• Human approval required for all client actions")
 
 # -------------------------------------------------------------
 # Module 1: Dashboard & Overview
 # -------------------------------------------------------------
 if navigation == "📊 Dashboard & Overview":
     st.markdown('<div class="main-header">📊 Freelance Operations Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Live view of discovered Excel opportunities, application pipeline, and monthly income targets.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Live command center for Excel freelance discovery, pipeline health, and monthly income targets.</div>', unsafe_allow_html=True)
 
-    # Monthly Summary
+    # 1. Connected Platforms Quick Overview
+    st.markdown("### 🌐 Connected Platforms & Accounts")
+    plat_df = pm.get_platform_accounts()
+    p_cols = st.columns(min(len(plat_df), 6))
+    for idx, (_, p_row) in enumerate(plat_df.head(6).iterrows()):
+        with p_cols[idx % 6]:
+            status_color = "#059669" if "Connect" in p_row.get("connection_status", "") or p_row.get("connection_status", "") == "Active" else "#D97706"
+            st.markdown(f"""
+            <div class="status-card">
+                <b>{p_row['platform_name']}</b><br/>
+                <span style="color: {status_color}; font-size: 0.85rem; font-weight: 600;">{p_row.get('connection_status', 'Manual')}</span><br/>
+                <span style="color: #64748B; font-size: 0.75rem;">{p_row.get('integration_mode', 'Manual')}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # 2. Monthly Target Progress
     cur_month = datetime.now().strftime("%Y-%m")
     summary = et.get_monthly_summary(target_month=cur_month, include_samples=include_samples)
 
-    # Monthly Target Progress Bars
     target_col1, target_col2 = st.columns(2)
     with target_col1:
         st.markdown(f"#### 🎯 Target 1: ₹{TARGET_MIN_INR:,.0f} / month")
@@ -133,13 +163,13 @@ if navigation == "📊 Dashboard & Overview":
 
     st.markdown("---")
 
-    # Application Pipeline Counters
+    # 3. Application & Opportunity Pipeline
     pipeline_kpis = at.get_pipeline_kpis()
     st.markdown("### 🚦 Application & Opportunity Pipeline")
     pkpi1, pkpi2, pkpi3, pkpi4 = st.columns(4)
-    pkpi1.metric("Jobs Awaiting Applications", pipeline_kpis["awaiting_apps"], help="Shortlisted jobs ready for proposal generation.")
+    pkpi1.metric("Jobs Awaiting Applications", pipeline_kpis["awaiting_apps"], help="Shortlisted opportunities ready for proposal drafting.")
     pkpi2.metric("Proposals Ready for Review", pipeline_kpis["proposals_drafted"], help="Jobs with drafted proposals.")
-    pkpi3.metric("Applications Submitted", pipeline_kpis["apps_submitted"], help="Proposals sent to clients.")
+    pkpi3.metric("Applications Submitted", pipeline_kpis["apps_submitted"], help="Proposals submitted to clients.")
     pkpi4.metric(
         "Replies & Follow-ups Due",
         pipeline_kpis["follow_ups_due"],
@@ -151,22 +181,27 @@ if navigation == "📊 Dashboard & Overview":
     follow_ups_df = at.get_follow_ups_due()
     if len(follow_ups_df) > 0:
         with st.expander(f"⏰ Follow-Up Reminder: {len(follow_ups_df)} Application(s) Due for Check-In", expanded=True):
-            st.info("Clients often take 2-4 days to review bids. A courteous follow-up increases response rates:")
+            st.info("A courteous follow-up after 2-4 days significantly increases response rates:")
             for _, f_app in follow_ups_df.iterrows():
                 st.markdown(f"- **{f_app['job_title']}** on {f_app['platform']} (Applied: {f_app['applied_date']}, Due: {f_app['follow_up_date']}) — *Note: {f_app['follow_up_notes'] or 'Standard follow-up'}*")
 
     st.markdown("---")
 
-    # High-level KPIs
+    # 4. High-level KPIs & Discovery Stats
     jobs_df = jm.get_jobs(include_samples=include_samples)
     total_jobs = len(jobs_df)
     high_priority_count = len(jobs_df[jobs_df["priority"] == "High"]) if total_jobs > 0 else 0
+    last_run = get_last_discovery_run()
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Total Jobs Found", total_jobs)
-    kpi2.metric("High Priority Matches", high_priority_count, help="Jobs scored 70+ matching Excel, Dashboard, or VBA skills.")
-    kpi3.metric("Interviews Active", pipeline_kpis["interviews_count"])
-    kpi4.metric("Net Earned (This Month)", f"₹{summary['total_net']:,.0f}", delta=f"Expected: ₹{summary['expected_net']:,.0f}")
+    kpi1.metric("Total Jobs in Database", total_jobs)
+    kpi2.metric("High-Priority Opportunities", high_priority_count, help="Jobs scored 70+ matching Excel, Dashboard, or VBA skills.")
+    kpi3.metric("Active Interviews", pipeline_kpis["interviews_count"])
+    kpi4.metric(
+        "Last Discovery Run",
+        last_run["status"].upper() if last_run else "Never",
+        delta=f"+{last_run['jobs_found']} Jobs" if last_run and last_run['jobs_found'] > 0 else "0 New"
+    )
 
     # Risk & Flagged Alert Section
     if total_jobs > 0:
@@ -193,31 +228,202 @@ if navigation == "📊 Dashboard & Overview":
                 with st.container():
                     c_title, c_budget, c_score, c_status = st.columns([3, 1, 1, 1])
                     sample_lbl = " [SAMPLE]" if job["is_sample"] == 1 else ""
-                    c_title.markdown(f"**{job['title']}**{sample_lbl}\n\n*Platform:* {job['platform']} | *Posted:* {job['date_posted'] or 'Recent'}")
+                    c_title.markdown(f"**{job['title']}**{sample_lbl}\n\n*Platform:* {job['platform']} | *Category:* {job.get('category') or 'Excel'} | *Posted:* {job['date_posted'] or 'Recent'}")
                     c_budget.markdown(f"**₹{job['budget']:,.0f}** {job['currency']}")
                     c_score.markdown(f"Match Score: **{job['score']}/100**")
                     c_status.markdown(f"`{job['status']}`")
                     st.divider()
         else:
-            st.info("No high-priority jobs at this time. Import new jobs via CSV to evaluate more opportunities.")
+            st.info("No high-priority jobs at this time. Run a discovery scan or import jobs via CSV to evaluate more opportunities.")
     else:
-        st.info("No jobs recorded. Import CSV jobs or enable sample data.")
+        st.info("No jobs recorded. Run a discovery scan or enable sample data.")
 
 # -------------------------------------------------------------
-# Module 2: Job Application Assistant & Honest Proposal Generator
+# Module 2: Job Discovery & Scanner
+# -------------------------------------------------------------
+elif navigation == "🔍 Job Discovery & Scanner":
+    st.markdown('<div class="main-header">🔍 Job Discovery Command Center</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Automated multi-source scanner pulling legitimate Excel freelance projects from permitted public feeds and APIs.</div>', unsafe_allow_html=True)
+
+    d_col1, d_col2 = st.columns([2, 1])
+    with d_col1:
+        st.markdown("#### 🚀 On-Demand Discovery Scan")
+        st.write("Scans active adapters (Freelancer.com Official API, Permitted Public Remote Feeds, Upwork Manual Feeds). Automatically scores opportunities and rejects duplicates.")
+
+        selected_terms = st.multiselect(
+            "Target Search Keywords for this Scan:",
+            options=SEARCH_TERMS,
+            default=SEARCH_TERMS[:4]
+        )
+
+        if st.button("🚀 Run Discovery Scan Now", type="primary"):
+            with st.spinner("Scanning permitted sources and evaluating Excel opportunities..."):
+                engine = DiscoveryEngine()
+                res = engine.run_discovery_scan(search_terms=selected_terms)
+                st.success(f"✅ Scan completed! {res['summary']}")
+                if res["error_logs"]:
+                    with st.expander("Review Adapter Notices / Warnings"):
+                        for err in res["error_logs"]:
+                            st.write(f"- {err}")
+                st.rerun()
+
+    with d_col2:
+        st.markdown("#### 🩺 Source Health & Readiness")
+        engine = DiscoveryEngine()
+        for ad in engine.adapters:
+            health = ad.test_connection()
+            h_icon = "🟢" if health.get("healthy") else ("🟡" if "pending" in health.get("status", "").lower() or "manual" in health.get("status", "").lower() else "🔴")
+            st.write(f"{h_icon} **{ad.source_name}**")
+            st.caption(f"Status: *{health['status']}* — {health['message']}")
+
+    st.markdown("---")
+
+    # Last Run & Scan History
+    st.markdown("### 📜 Discovery Scan Audit History")
+    history_df = get_discovery_history(limit=8)
+    if len(history_df) > 0:
+        h_view = history_df[["id", "run_timestamp", "jobs_found", "duplicates_skipped", "errors_logged", "status", "summary_notes"]].copy()
+        h_view = h_view.rename(columns={
+            "id": "Run ID", "run_timestamp": "Timestamp", "jobs_found": "New Jobs",
+            "duplicates_skipped": "Duplicates Skipped", "errors_logged": "Warnings",
+            "status": "Status", "summary_notes": "Summary"
+        })
+        st.dataframe(h_view, use_container_width=True, hide_index=True)
+    else:
+        st.info("No discovery runs recorded yet. Click 'Run Discovery Scan Now' above.")
+
+    st.markdown("---")
+    st.markdown("### ⏰ Windows Task Scheduler Automation")
+    st.markdown("""
+    To run this discovery engine automatically in the background on your Windows PC:
+    1. Open Windows **Task Scheduler** (`taskschd.msc`).
+    2. Click **Create Basic Task** ➔ Name: `Excel Hunter AI Discovery`.
+    3. Trigger: **When I log on** or **Daily at 9:00 AM**.
+    4. Action: **Start a program** ➔ Program: `python.exe` ➔ Arguments: `run_discovery.py` ➔ Start in: `d:\\PROJECTS\\EXCE FINDING AI`.
+    5. The engine will safely discover jobs, deduplicate against existing records, and update your database automatically!
+    """)
+
+# -------------------------------------------------------------
+# Module 3: Universal Job Importer
+# -------------------------------------------------------------
+elif navigation == "📥 Universal Job Importer":
+    st.markdown('<div class="main-header">📥 Universal Job Importer</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Ingest Excel freelance opportunities from pasted URLs, client messages, email alert notifications, or CSV files.</div>', unsafe_allow_html=True)
+
+    imp_tab1, imp_tab2, imp_tab3, imp_tab4 = st.tabs([
+        "🔗 Paste Job URL",
+        "📄 Paste Description / Client Text",
+        "📬 Parse Email Alert",
+        "📊 Upload CSV File"
+    ])
+
+    with imp_tab1:
+        st.markdown("##### Ingest from Opportunity Link")
+        st.caption("Paste a direct job URL from Upwork, Freelancer, Fiverr, Guru, PeoplePerHour, Truelancer, or a client site.")
+        with st.form("import_url_form"):
+            in_url = st.text_input("Job Opportunity URL*", placeholder="https://www.upwork.com/jobs/~01example...")
+            in_utitle = st.text_input("Job Title (optional)", placeholder="e.g. Executive Sales MIS Dashboard in Excel")
+            in_ubudget = st.number_input("Budget (INR)", min_value=0.0, step=500.0, value=5000.0)
+            in_udesc = st.text_area("Job Description / Requirements excerpt (optional)", height=100)
+            in_uclient = st.text_input("Client Info (optional)", placeholder="e.g. Verified Employer, 4.9 stars")
+
+            sub_url = st.form_submit_button("🚀 Import & Evaluate Job", type="primary")
+            if sub_url:
+                success, j_id, msg = import_job_from_url(
+                    job_url=in_url,
+                    title=in_utitle,
+                    budget=in_ubudget,
+                    description=in_udesc,
+                    client_info=in_uclient
+                )
+                if success:
+                    st.success(f"✅ Job #{j_id} imported successfully into the repository!")
+                else:
+                    st.warning(msg)
+
+    with imp_tab2:
+        st.markdown("##### Ingest from Raw Brief or Client Chat")
+        st.caption("Paste unstructured job details copied from WhatsApp, client email, or private messaging.")
+        with st.form("import_text_form"):
+            in_tplatform = st.selectbox("Platform / Source", PLATFORMS, index=PLATFORMS.index("Direct Client") if "Direct Client" in PLATFORMS else 0)
+            in_turl = st.text_input("Associated URL / Thread Link (optional)", placeholder="https://...")
+            in_tbudget = st.number_input("Known Budget (INR, leave 0 to auto-extract)", min_value=0.0, step=500.0, value=0.0)
+            in_raw = st.text_area("Pasted Message / Project Brief*", height=180, placeholder="We are looking for an Excel specialist to automate our sales reconciliation sheet...")
+
+            sub_text = st.form_submit_button("🚀 Parse & Add Opportunity", type="primary")
+            if sub_text:
+                success, j_id, msg = import_job_from_pasted_text(
+                    raw_text=in_raw,
+                    platform=in_tplatform,
+                    job_url=in_turl,
+                    custom_budget=in_tbudget if in_tbudget > 0 else None
+                )
+                if success:
+                    st.success(f"✅ Opportunity #{j_id} parsed and saved!")
+                else:
+                    st.warning(msg)
+
+    with imp_tab3:
+        st.markdown("##### Ingest Platform Email Alert Notification")
+        st.caption("Copy and paste the subject line and body text from your Upwork, Freelancer, or job alert emails.")
+        with st.form("import_email_form"):
+            in_esender = st.selectbox("Sender Platform", ["Auto-Detect"] + PLATFORMS)
+            in_esubject = st.text_input("Email Subject Line*", placeholder="New Job Alert: Expert in Excel Dashboard Needed")
+            in_ebody = st.text_area("Email Notification Body*", height=180, placeholder="Hi, a new project matching your Excel skills was posted...")
+
+            sub_email = st.form_submit_button("🚀 Process Email Alert", type="primary")
+            if sub_email:
+                sender = None if in_esender == "Auto-Detect" else in_esender
+                success, j_id, msg = parse_email_alert(
+                    subject=in_esubject,
+                    body=in_ebody,
+                    sender_platform=sender
+                )
+                if success:
+                    st.success(f"✅ Email alert imported as Job #{j_id}!")
+                else:
+                    st.warning(msg)
+
+    with imp_tab4:
+        st.markdown("##### Batch Import from CSV Spreadsheet")
+        uploaded_file = st.file_uploader("Select a CSV file to import jobs:", type=["csv"])
+        mark_as_sample = st.checkbox("Mark imported records as Sample Data", value=False)
+
+        if uploaded_file is not None:
+            if st.button("🚀 Process & Import CSV", type="primary"):
+                result = jm.import_jobs_from_csv(uploaded_file, is_sample=mark_as_sample)
+                if result["success"]:
+                    st.success(f"✅ Successfully imported **{result['imported_count']}** new job(s).")
+                    if result["duplicate_count"] > 0:
+                        st.info(f"ℹ️ Skipped **{result['duplicate_count']}** duplicate job(s) already in the database.")
+                    if result["errors"]:
+                        with st.expander("Review Warning/Error Rows"):
+                            for err in result["errors"]:
+                                st.write(f"- {err}")
+                else:
+                    st.error(f"Import failed: {result['error']}")
+
+        st.markdown("---")
+        st.caption("Or test with pre-packaged `data/sample_jobs.csv`:")
+        if SAMPLE_CSV_PATH.exists():
+            if st.button("📥 Import Sample Template CSV"):
+                with open(SAMPLE_CSV_PATH, "r", encoding="utf-8") as f:
+                    res = jm.import_jobs_from_csv(f, is_sample=True)
+                st.success(f"Imported {res['imported_count']} jobs ({res['duplicate_count']} duplicates skipped).")
+
+# -------------------------------------------------------------
+# Module 4: Job Application Assistant
 # -------------------------------------------------------------
 elif navigation == "🚀 Application Assistant":
     st.markdown('<div class="main-header">🚀 Job Application Assistant</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Inspect opportunities, open original postings, generate honest tailored proposals, and confirm submissions.</div>', unsafe_allow_html=True)
 
-    # Policy notice
     st.info("🛡️ **Policy Protection**: Excel Hunter AI assists your workflow by generating tailored drafts and opening links. All logins, submissions, and client communications remain 100% human-controlled in accordance with platform rules.")
 
     jobs_pool = jm.get_jobs(include_samples=include_samples)
     if len(jobs_pool) == 0:
-        st.warning("No jobs available. Please import jobs or enable sample data.")
+        st.warning("No jobs available. Please run a discovery scan, import jobs, or enable sample data.")
     else:
-        # Preferred filter
         st.markdown("##### 1. Select a Freelance Opportunity")
         filter_status = st.radio("Show jobs with status:", ["Shortlisted & Discovered", "All Jobs"], horizontal=True)
 
@@ -237,14 +443,13 @@ elif navigation == "🚀 Application Assistant":
 
         selected_job = selectable_jobs[selectable_jobs["id"] == selected_job_id].iloc[0]
 
-        # Job Overview Card
         st.markdown("---")
         st.markdown(f"### 📋 Job Brief: #{selected_job['id']} — {selected_job['title']}")
 
         bcol1, bcol2, bcol3, bcol4 = st.columns(4)
         bcol1.metric("Platform", selected_job["platform"])
         bcol2.metric("Budget", f"₹{selected_job['budget']:,.0f} {selected_job['currency']}")
-        bcol3.metric("Skill Match Score", f"{selected_job['score']}/100")
+        bcol3.metric("Match Score", f"{selected_job['score']}/100")
         bcol4.metric("Current Status", selected_job["status"].upper())
 
         if selected_job["risk_flags"] and selected_job["risk_flags"] != "[]":
@@ -252,11 +457,10 @@ elif navigation == "🚀 Application Assistant":
         else:
             st.success("✅ Clean Opportunity: No suspicious payment or fee patterns detected.")
 
-        st.markdown("**Client Information:** " + (selected_job["client_info"] or "Not provided"))
+        st.markdown(f"**Category:** `{selected_job.get('category') or 'Excel'}` | **Client Info:** {selected_job['client_info'] or 'Not provided'}")
         st.markdown("**Full Description:**")
         st.info(selected_job["description"] or "No detailed description provided.")
 
-        # External Link Action
         st.markdown("##### 2. Open Posting in Your Browser")
         if selected_job["url"]:
             st.link_button(f"🌐 Open Original Job on {selected_job['platform']}", url=selected_job["url"], type="secondary")
@@ -266,9 +470,8 @@ elif navigation == "🚀 Application Assistant":
 
         st.markdown("---")
 
-        # Proposal Generator Section
         st.markdown("##### 3. Generate Tailored Proposal (Verified Skills Only)")
-        st.caption("Proposals emphasize your real Excel capabilities (dashboards, formula repair, XLOOKUP, VBA automation, data cleaning). Zero fabrication.")
+        st.caption("Emphasizes verified Excel capabilities (Dashboards, formula repair, XLOOKUP, VBA automation, MIS reporting). Zero fabrication.")
 
         p_col1, p_col2, p_col3 = st.columns(3)
         with p_col1:
@@ -278,7 +481,6 @@ elif navigation == "🚀 Application Assistant":
         with p_col3:
             prop_time = st.selectbox("Turnaround Estimate", ["1-2 days", "2-3 days", "Within 24 hours", "3-5 days"])
 
-        # State session key for proposal text
         prop_key = f"draft_proposal_{selected_job_id}"
         if prop_key not in st.session_state:
             initial_draft = pg.generate_honest_proposal(
@@ -303,7 +505,6 @@ elif navigation == "🚀 Application Assistant":
             jm.update_job_status(selected_job_id, "proposal_drafted")
             st.rerun()
 
-        # Editable Proposal Draft
         proposal_content = st.text_area(
             "Proposal Draft (Edit as needed before copying):",
             value=st.session_state[prop_key],
@@ -312,9 +513,7 @@ elif navigation == "🚀 Application Assistant":
 
         st.markdown("---")
 
-        # Step 4: Submission Confirmation & History Logging
         st.markdown("##### 4. Record Application & Set Follow-Up")
-
         with st.form("confirm_application_form"):
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -326,7 +525,6 @@ elif navigation == "🚀 Application Assistant":
 
             f_notes = st.text_input("Follow-Up / Submission Notes", placeholder="e.g. Attached sample dashboard screenshot via platform messenger")
 
-            # Human confirmation gate
             st.markdown("###### 🛡️ Confirmation Gate:")
             confirmed_submission = st.checkbox(
                 "I confirm that I have reviewed this proposal and manually submitted it through the official platform website."
@@ -356,13 +554,12 @@ elif navigation == "🚀 Application Assistant":
                         st.error(msg)
 
 # -------------------------------------------------------------
-# Module 3: Application History & Follow-ups
+# Module 5: Application History & Follow-ups
 # -------------------------------------------------------------
 elif navigation == "📬 Application History & Follow-ups":
     st.markdown('<div class="main-header">📬 Application History & Follow-Up Tracker</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Monitor submitted proposals, track client replies, log interview progress, and view scheduled follow-ups.</div>', unsafe_allow_html=True)
 
-    # Filter controls
     fcol1, fcol2 = st.columns(2)
     with fcol1:
         f_plat = st.selectbox("Filter Platform", ["All"] + PLATFORMS)
@@ -424,27 +621,38 @@ elif navigation == "📬 Application History & Follow-ups":
         st.info("No applications logged yet. Use the 'Application Assistant' tab to draft and record your bids.")
 
 # -------------------------------------------------------------
-# Module 4: Job Repository & Pipeline
+# Module 6: Job Repository & Pipeline (With Advanced Category Filtering)
 # -------------------------------------------------------------
 elif navigation == "📋 Job Repository & Pipeline":
-    st.markdown('<div class="main-header">📋 Job Repository & Application Pipeline</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Manage, filter, score, and track status for all discovered Excel freelance jobs.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">📋 Job Repository & Advanced Filters</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Filter, score, and track discovered Excel freelance opportunities across all 10 specialized categories.</div>', unsafe_allow_html=True)
 
-    # Filter Controls
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-    with col_f1:
+    # Advanced Filter Controls
+    f_c1, f_c2, f_c3, f_c4 = st.columns(4)
+    with f_c1:
         f_platform = st.selectbox("Filter Platform", ["All"] + PLATFORMS)
-    with col_f2:
-        f_status = st.selectbox("Filter Status", ["All"] + JOB_STATUSES)
-    with col_f3:
+    with f_c2:
+        f_category = st.selectbox("Filter Job Category (10 Tracks)", ["All"] + JOB_CATEGORIES)
+    with f_c3:
         f_priority = st.selectbox("Filter Priority", ["All"] + PRIORITIES)
-    with col_f4:
-        f_search = st.text_input("Search Keyword", placeholder="e.g. dashboard, formula, vba")
+    with f_c4:
+        f_status = st.selectbox("Filter Status", ["All"] + JOB_STATUSES)
+
+    f_c5, f_c6, f_c7 = st.columns(3)
+    with f_c5:
+        f_min_score = st.slider("Minimum Match Score (0–100):", min_value=0, max_value=90, value=0, step=5)
+    with f_c6:
+        f_min_budget = st.number_input("Minimum Budget (INR):", min_value=0.0, step=1000.0, value=0.0)
+    with f_c7:
+        f_search = st.text_input("Keyword Search:", placeholder="e.g. xlookup, dashboard, vba, reconciliation")
 
     jobs_data = jm.get_jobs(
         platform=f_platform,
         status=f_status,
         priority=f_priority,
+        category=f_category,
+        min_score=f_min_score,
+        min_budget=f_min_budget,
         search_keyword=f_search,
         include_samples=include_samples
     )
@@ -452,18 +660,11 @@ elif navigation == "📋 Job Repository & Pipeline":
     st.markdown(f"**Found {len(jobs_data)} job(s)** matching filters.")
 
     if len(jobs_data) > 0:
-        # Display Table Summary
-        display_cols = ["id", "title", "platform", "budget", "currency", "score", "priority", "status", "is_sample"]
-        preview_df = jobs_data[display_cols].copy()
-        preview_df["is_sample"] = preview_df["is_sample"].apply(lambda x: "Yes (Sample)" if x == 1 else "No (Real)")
-        preview_df = preview_df.rename(columns={
-            "id": "ID", "title": "Title", "platform": "Platform",
-            "budget": "Budget", "currency": "Currency", "score": "Score",
-            "priority": "Priority", "status": "Status", "is_sample": "Sample Data"
-        })
+        display_cols = ["id", "title", "platform", "category", "budget", "score", "priority", "status", "discovery_source"]
+        present_cols = [c for c in display_cols if c in jobs_data.columns]
+        preview_df = jobs_data[present_cols].copy()
         st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
-        # Job Inspector & Status Changer
         st.markdown("### 🔍 Inspect & Update Job")
         selected_id = st.selectbox(
             "Select Job to Inspect or Update Status:",
@@ -478,17 +679,19 @@ elif navigation == "📋 Job Repository & Pipeline":
                 with det1:
                     st.write(f"**Title:** {sel_row['title']}")
                     st.write(f"**Platform:** {sel_row['platform']}")
+                    st.write(f"**Category:** `{sel_row.get('category') or 'Excel'}`")
                     st.write(f"**Budget:** ₹{sel_row['budget']:,.2f} {sel_row['currency']}")
-                    st.write(f"**Client Info:** {sel_row['client_info'] or 'Not provided'}")
+                    st.write(f"**Discovery Source:** `{sel_row.get('discovery_source') or 'manual'}`")
                     if sel_row['url']:
                         st.markdown(f"**Job URL:** [{sel_row['url']}]({sel_row['url']})")
                 with det2:
                     st.write(f"**Match Score:** {sel_row['score']}/100")
                     st.write(f"**Priority:** {sel_row['priority']}")
+                    st.write(f"**Client Info:** {sel_row['client_info'] or 'Not provided'}")
                     if sel_row['risk_flags'] and sel_row['risk_flags'] != "[]":
                         st.markdown(f"**Risk Flags:** <span class='badge-risk'>{sel_row['risk_flags']}</span>", unsafe_allow_html=True)
                     else:
-                        st.write("**Risk Assessment:** ✅ Clean, no risk patterns detected")
+                        st.write("**Risk Assessment:** ✅ Clean opportunity")
 
                 st.markdown("**Description:**")
                 st.info(sel_row["description"] or "No detailed description.")
@@ -510,7 +713,6 @@ elif navigation == "📋 Job Repository & Pipeline":
                         st.success(f"Job #{selected_id} updated to status '{new_status}'!")
                         st.rerun()
 
-        # Export Button
         st.markdown("### 📤 Export Job Records")
         csv_export = jobs_data.to_csv(index=False).encode("utf-8")
         st.download_button(
@@ -523,7 +725,164 @@ elif navigation == "📋 Job Repository & Pipeline":
         st.warning("No jobs found matching your criteria.")
 
 # -------------------------------------------------------------
-# Module 5: Earnings & Monthly Targets
+# Module 7: Fiverr Gigs & Buyer Requests
+# -------------------------------------------------------------
+elif navigation == "💼 Fiverr Gigs & Buyer Requests":
+    st.markdown('<div class="main-header">💼 Fiverr Gig & Buyer Request Manager</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Manage your Fiverr Gigs, track client inquiries, and manually ingest buyer requirements without violating Fiverr terms.</div>', unsafe_allow_html=True)
+
+    fg_tab1, fg_tab2 = st.tabs(["📋 Active Excel Gigs", "➕ Ingest Buyer Request / Inquiry"])
+
+    with fg_tab1:
+        gigs_df = fm.get_fiverr_gigs()
+        st.dataframe(gigs_df[["id", "gig_title", "status", "target_keywords", "notes"]], use_container_width=True, hide_index=True)
+
+        st.markdown("#### ➕ Add New Fiverr Gig Profile")
+        with st.form("new_gig_form"):
+            ng_title = st.text_input("Gig Title*", placeholder="e.g. Build Custom Excel VBA Macro and Automation System")
+            ng_url = st.text_input("Gig Public Link", placeholder="https://www.fiverr.com/s/...")
+            ng_kw = st.text_input("Target Search Keywords", placeholder="Excel VBA, Macro, Automation, Data Cleaning")
+            ng_status = st.selectbox("Status", ["Active", "Paused", "Draft"])
+            ng_notes = st.text_input("Pricing / Package Notes", placeholder="Basic: $25, Standard: $60, Premium: $120")
+
+            sub_ng = st.form_submit_button("💾 Save Gig Profile")
+            if sub_ng:
+                if not ng_title.strip():
+                    st.error("Gig title is required.")
+                else:
+                    fm.add_fiverr_gig(ng_title, ng_url, ng_kw, ng_status, ng_notes)
+                    st.success("New Gig profile saved!")
+                    st.rerun()
+
+    with fg_tab2:
+        st.markdown("#### Ingest a Fiverr Client Inquiry or Buyer Requirement")
+        st.caption("Manually copy and paste a buyer request or inbox inquiry to evaluate match and prepare a proposal.")
+        with st.form("fiverr_req_form"):
+            br_title = st.text_input("Request Summary / Title*", placeholder="e.g. Sales Report Consolidation and Formula Audit")
+            br_desc = st.text_area("Full Client Requirement / Message*", height=150)
+            br_budget = st.number_input("Offered / Proposed Budget (INR)*", min_value=100.0, step=500.0, value=3500.0)
+            br_buyer = st.text_input("Buyer Username / Location", placeholder="e.g. @us_ecommerce_buyer (United States)")
+            br_url = st.text_input("Fiverr Order / Request URL (optional)")
+            br_deadline = st.text_input("Stated Turnaround / Deadline", placeholder="e.g. 2 days")
+
+            sub_br = st.form_submit_button("🚀 Add Buyer Request to Pipeline", type="primary")
+            if sub_br:
+                if not br_title.strip() or not br_desc.strip():
+                    st.error("Title and description are required.")
+                else:
+                    success, j_id, msg = fm.add_fiverr_buyer_request(
+                        title=br_title,
+                        description=br_desc,
+                        budget=br_budget,
+                        buyer_info=br_buyer,
+                        request_url=br_url,
+                        deadline=br_deadline
+                    )
+                    if success:
+                        st.success(f"✅ Fiverr request #{j_id} added to repository with automated skill scoring!")
+                    else:
+                        st.warning(msg)
+
+# -------------------------------------------------------------
+# Module 8: Platform Account Manager
+# -------------------------------------------------------------
+elif navigation == "🌐 Platform Account Manager":
+    st.markdown('<div class="main-header">🌐 Platform Account Manager</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Configure Freelancer.com, Fiverr, Upwork, PeoplePerHour, Truelancer, and Guru settings with strict security.</div>', unsafe_allow_html=True)
+
+    st.success("🔒 **Zero-Credential Security Policy**: Excel Hunter AI never requests, accepts, or stores passwords, API secrets, or browser session cookies. All logins and client payments occur securely on the platforms' official web portals.")
+
+    plat_tab1, plat_tab2 = st.tabs(["📋 Configured Platforms", "➕ Add Custom Platform"])
+
+    with plat_tab1:
+        platforms_df = pm.get_platform_accounts()
+        if len(platforms_df) > 0:
+            view_cols = ["id", "platform_name", "account_status", "integration_mode", "connection_status", "profile_url", "last_checked_date"]
+            present_cols = [c for c in view_cols if c in platforms_df.columns]
+            st.dataframe(platforms_df[present_cols], use_container_width=True, hide_index=True)
+
+            st.markdown("### ✏️ Edit Platform Profile & Compliance Settings")
+            sel_pid = st.selectbox(
+                "Select Platform to Manage:",
+                options=platforms_df["id"].tolist(),
+                format_func=lambda pid: f"#{pid} - {platforms_df[platforms_df['id']==pid]['platform_name'].values[0]} ({platforms_df[platforms_df['id']==pid]['integration_mode'].values[0]})"
+            )
+
+            if sel_pid:
+                p_row = platforms_df[platforms_df["id"] == sel_pid].iloc[0]
+                with st.form(f"edit_platform_{sel_pid}"):
+                    st.markdown(f"#### Platform: {p_row['platform_name']}")
+                    ep_url = st.text_input("Your Public Profile URL", value=p_row["profile_url"] or "")
+
+                    c_p1, c_p2, c_p3 = st.columns(3)
+                    with c_p1:
+                        ep_status = st.selectbox(
+                            "Account Status",
+                            pm.ACCOUNT_STATUSES,
+                            index=pm.ACCOUNT_STATUSES.index(p_row["account_status"]) if p_row["account_status"] in pm.ACCOUNT_STATUSES else 0
+                        )
+                    with c_p2:
+                        ep_mode = st.selectbox(
+                            "Integration Method",
+                            INTEGRATION_STATES,
+                            index=INTEGRATION_STATES.index(p_row["integration_mode"]) if p_row["integration_mode"] in INTEGRATION_STATES else 0
+                        )
+                    with c_p3:
+                        ep_conn = st.selectbox(
+                            "Connection Status",
+                            pm.CONNECTION_STATUSES,
+                            index=pm.CONNECTION_STATUSES.index(p_row.get("connection_status", "Connected")) if p_row.get("connection_status") in pm.CONNECTION_STATUSES else 0
+                        )
+
+                    ep_policy = st.text_area("Platform Policy & Terms Compliance Notes", value=p_row["policy_notes"] or "")
+                    ep_notes = st.text_input("Personal Strategy Notes / Gigs", value=p_row["notes"] or "")
+
+                    save_p_btn = st.form_submit_button("💾 Save Platform Settings")
+                    if save_p_btn:
+                        ok = pm.update_platform_account(
+                            platform_id=sel_pid,
+                            profile_url=ep_url,
+                            account_status=ep_status,
+                            integration_mode=ep_mode,
+                            connection_status=ep_conn,
+                            policy_notes=ep_policy,
+                            notes=ep_notes
+                        )
+                        if ok:
+                            st.success(f"Platform settings for '{p_row['platform_name']}' updated successfully!")
+                            st.rerun()
+
+    with plat_tab2:
+        with st.form("add_platform_form"):
+            st.markdown("##### Connect a New Platform or Direct Channel")
+            np_name = st.text_input("Platform / Channel Name*", placeholder="e.g. Guru, Truelancer, PeoplePerHour")
+            np_url = st.text_input("Public Profile / Link", placeholder="https://www.example.com/freelancer")
+            np_status = st.selectbox("Initial Status", pm.ACCOUNT_STATUSES)
+            np_mode = st.selectbox("Integration Policy", INTEGRATION_STATES)
+            np_conn = st.selectbox("Connection Status", pm.CONNECTION_STATUSES)
+            np_notes = st.text_input("Notes", placeholder="e.g. Specializing in Excel reporting")
+
+            add_p_btn = st.form_submit_button("➕ Add Platform Record", type="primary")
+            if add_p_btn:
+                if not np_name.strip():
+                    st.error("Platform name is required.")
+                else:
+                    new_pid = pm.add_custom_platform(
+                        platform_name=np_name,
+                        profile_url=np_url,
+                        account_status=np_status,
+                        integration_mode=np_mode,
+                        connection_status=np_conn,
+                        notes=np_notes
+                    )
+                    if new_pid:
+                        st.success(f"Platform '{np_name}' added successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Platform '{np_name}' already exists or could not be saved.")
+
+# -------------------------------------------------------------
+# Module 9: Earnings & Monthly Targets
 # -------------------------------------------------------------
 elif navigation == "💰 Earnings & Monthly Targets":
     st.markdown('<div class="main-header">💰 Earnings & Target Tracker</div>', unsafe_allow_html=True)
@@ -534,7 +893,6 @@ elif navigation == "💰 Earnings & Monthly Targets":
 
     summary = et.get_monthly_summary(target_month=selected_month_str, include_samples=include_samples)
 
-    # Monthly Progress Cards
     ecol1, ecol2, ecol3, ecol4 = st.columns(4)
     ecol1.metric("Gross Billed", f"₹{summary['total_gross']:,.2f}")
     ecol2.metric("Platform Fees Deducted", f"₹{summary['total_fees']:,.2f}")
@@ -565,7 +923,6 @@ elif navigation == "💰 Earnings & Monthly Targets":
 
     st.markdown("---")
 
-    # Earnings Form, Ledger & Editor
     e_tab1, e_tab2, e_tab3 = st.tabs(["📜 Earnings Ledger", "➕ Record New Payment", "✏️ Edit / Manage Payment"])
 
     with e_tab1:
@@ -663,147 +1020,7 @@ elif navigation == "💰 Earnings & Monthly Targets":
             st.info("No records available to edit.")
 
 # -------------------------------------------------------------
-# Module 6: CSV Job Import
-# -------------------------------------------------------------
-elif navigation == "📥 CSV Job Import":
-    st.markdown('<div class="main-header">📥 Import Freelance Jobs from CSV</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Zero-cost import: Ingest Excel freelance job listings from manual CSV exports, email alert exports, or saved searches.</div>', unsafe_allow_html=True)
-
-    st.markdown("""
-    #### 📋 How CSV Import Works
-    - **Safe & Permitted**: We never scrape restricted pages or bypass website logins. You can export or collect job lists from public feeds or alerts.
-    - **Intelligent Deduplication**: Duplicates with matching URLs or normalized titles are automatically detected and skipped.
-    - **Auto-Evaluation**: Incoming jobs are automatically analyzed for Excel skill match, budget value, clarity, and suspicious fraud signals.
-    """)
-
-    import_tab1, import_tab2 = st.tabs(["Upload Your CSV", "Load Included Sample Template CSV"])
-
-    with import_tab1:
-        uploaded_file = st.file_uploader("Select a CSV file to import jobs:", type=["csv"])
-        mark_as_sample = st.checkbox("Mark imported records as Sample Data", value=False)
-
-        if uploaded_file is not None:
-            if st.button("🚀 Process & Import CSV", type="primary"):
-                result = jm.import_jobs_from_csv(uploaded_file, is_sample=mark_as_sample)
-                if result["success"]:
-                    st.success(f"✅ Successfully imported **{result['imported_count']}** new job(s).")
-                    if result["duplicate_count"] > 0:
-                        st.info(f"ℹ️ Skipped **{result['duplicate_count']}** duplicate job(s) already in the database.")
-                    if result["errors"]:
-                        with st.expander("Review Warning/Error Rows"):
-                            for err in result["errors"]:
-                                st.write(f"- {err}")
-                else:
-                    st.error(f"Import failed: {result['error']}")
-
-    with import_tab2:
-        st.markdown("Use this option to test the import pipeline with our pre-packaged `data/sample_jobs.csv` containing realistic test Excel listings.")
-        sample_csv_path = SAMPLE_CSV_PATH
-        if sample_csv_path.exists():
-            sample_df = pd.read_csv(sample_csv_path)
-            st.dataframe(sample_df, use_container_width=True)
-            if st.button("📥 Import Sample CSV into Database"):
-                with open(sample_csv_path, "r", encoding="utf-8") as f:
-                    res = jm.import_jobs_from_csv(f, is_sample=True)
-                st.success(f"Imported {res['imported_count']} jobs ({res['duplicate_count']} duplicates skipped).")
-        else:
-            st.warning("Sample CSV not found at `data/sample_jobs.csv`.")
-
-# -------------------------------------------------------------
-# Module 7: Platform Accounts & Policies
-# -------------------------------------------------------------
-elif navigation == "🌐 Platform Accounts & Policies":
-    st.markdown('<div class="main-header">🌐 Platform Accounts & Policy Control</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Manage your freelance platform profiles, enforce human-controlled automation safety, and maintain compliance.</div>', unsafe_allow_html=True)
-
-    # Security callout
-    st.success("🔒 **Zero-Credential Security Architecture**: Excel Hunter AI never requests, accepts, or stores passwords, API secrets, or browser session cookies. All client logins and payments occur securely on the platforms' official web portals.")
-
-    plat_tab1, plat_tab2 = st.tabs(["📋 Configured Platforms", "➕ Add Custom Platform"])
-
-    with plat_tab1:
-        platforms_df = pm.get_platform_accounts()
-        if len(platforms_df) > 0:
-            view_cols = platforms_df[["id", "platform_name", "account_status", "integration_mode", "profile_url"]].copy()
-            view_cols = view_cols.rename(columns={
-                "id": "ID", "platform_name": "Platform", "account_status": "Status",
-                "integration_mode": "Integration Policy", "profile_url": "Profile URL"
-            })
-            st.dataframe(view_cols, use_container_width=True, hide_index=True)
-
-            st.markdown("### ✏️ Edit Platform Profile & Compliance Settings")
-            sel_pid = st.selectbox(
-                "Select Platform to Manage:",
-                options=platforms_df["id"].tolist(),
-                format_func=lambda pid: f"#{pid} - {platforms_df[platforms_df['id']==pid]['platform_name'].values[0]} ({platforms_df[platforms_df['id']==pid]['integration_mode'].values[0]})"
-            )
-
-            if sel_pid:
-                p_row = platforms_df[platforms_df["id"] == sel_pid].iloc[0]
-                with st.form(f"edit_platform_{sel_pid}"):
-                    st.markdown(f"#### Platform: {p_row['platform_name']}")
-                    ep_url = st.text_input("Your Public Profile URL", value=p_row["profile_url"] or "")
-                    
-                    c_p1, c_p2 = st.columns(2)
-                    with c_p1:
-                        ep_status = st.selectbox(
-                            "Account Status",
-                            pm.ACCOUNT_STATUSES,
-                            index=pm.ACCOUNT_STATUSES.index(p_row["account_status"]) if p_row["account_status"] in pm.ACCOUNT_STATUSES else 0
-                        )
-                    with c_p2:
-                        ep_mode = st.selectbox(
-                            "Integration Capability",
-                            pm.INTEGRATION_MODES,
-                            index=pm.INTEGRATION_MODES.index(p_row["integration_mode"]) if p_row["integration_mode"] in pm.INTEGRATION_MODES else 0
-                        )
-
-                    ep_policy = st.text_area("Platform Policy & Terms Compliance Notes", value=p_row["policy_notes"] or "")
-                    ep_notes = st.text_input("Personal Strategy Notes / Gigs", value=p_row["notes"] or "")
-
-                    save_p_btn = st.form_submit_button("💾 Save Platform Settings")
-                    if save_p_btn:
-                        ok = pm.update_platform_account(
-                            platform_id=sel_pid,
-                            profile_url=ep_url,
-                            account_status=ep_status,
-                            integration_mode=ep_mode,
-                            policy_notes=ep_policy,
-                            notes=ep_notes
-                        )
-                        if ok:
-                            st.success(f"Platform settings for '{p_row['platform_name']}' updated successfully!")
-                            st.rerun()
-
-    with plat_tab2:
-        with st.form("add_platform_form"):
-            st.markdown("##### Connect a New Platform or Direct Channel")
-            np_name = st.text_input("Platform / Channel Name*", placeholder="e.g. Guru, Truelancer, WhatsApp Direct")
-            np_url = st.text_input("Public Profile / Link", placeholder="https://www.example.com/freelancer")
-            np_status = st.selectbox("Initial Status", pm.ACCOUNT_STATUSES)
-            np_mode = st.selectbox("Integration Policy", pm.INTEGRATION_MODES)
-            np_notes = st.text_input("Notes", placeholder="e.g. Specializing in Excel reporting")
-
-            add_p_btn = st.form_submit_button("➕ Add Platform Record", type="primary")
-            if add_p_btn:
-                if not np_name.strip():
-                    st.error("Platform name is required.")
-                else:
-                    new_pid = pm.add_custom_platform(
-                        platform_name=np_name,
-                        profile_url=np_url,
-                        account_status=np_status,
-                        integration_mode=np_mode,
-                        notes=np_notes
-                    )
-                    if new_pid:
-                        st.success(f"Platform '{np_name}' added successfully!")
-                        st.rerun()
-                    else:
-                        st.error(f"Platform '{np_name}' already exists or could not be saved.")
-
-# -------------------------------------------------------------
-# Module 8: Database & Settings
+# Module 10: Database & Settings
 # -------------------------------------------------------------
 elif navigation == "⚙️ Database & Settings":
     st.markdown('<div class="main-header">⚙️ System & Data Management</div>', unsafe_allow_html=True)
