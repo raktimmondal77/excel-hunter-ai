@@ -23,6 +23,7 @@ from src.discovery.universal_importer import (
     parse_email_alert
 )
 from src.sample_data import seed_sample_data
+from src.evaluation import is_soft_warning
 
 # Page setup
 st.set_page_config(
@@ -120,7 +121,22 @@ st.markdown("""
     .badge-green { background: #DCFCE7; color: #166534; }
     .badge-blue { background: #DBEAFE; color: #1E40AF; }
     .badge-amber { background: #FEF3C7; color: #92400E; }
+    .badge-red { background: #FEE2E2; color: #991B1B; }
     .badge-gray { background: #F1F5F9; color: #475569; }
+    .badge-purple { background: #EDE9FE; color: #5B21B6; }
+
+    /* Risk flag box */
+    .risk-box {
+        background: #FEF2F2;
+        border: 1px dashed #FCA5A5;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-top: 10px;
+        font-size: 0.85rem;
+        color: #991B1B;
+    }
+    .risk-box ul { margin: 4px 0 0 18px; padding: 0; }
+    .risk-box li { margin-bottom: 2px; }
 
     /* Buttons */
     .stButton>button {
@@ -135,6 +151,31 @@ if "active_job_id" not in st.session_state:
     st.session_state["active_job_id"] = None
 if "selected_page" not in st.session_state:
     st.session_state["selected_page"] = "🏠 Home & Progress"
+if "last_scan_result" not in st.session_state:
+    st.session_state["last_scan_result"] = None
+
+import json as _json
+from datetime import date as _date
+
+def parse_risk_flags(raw) -> list:
+    """Safely parses the JSON risk-flag column of a job row."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
+    try:
+        val = _json.loads(str(raw))
+        return val if isinstance(val, list) else []
+    except (ValueError, TypeError):
+        return []
+
+def job_age_days(date_posted) -> int:
+    """Age of a posting in days (None-safe, future-safe). -1 = unknown."""
+    try:
+        posted = datetime.strptime(str(date_posted)[:10], "%Y-%m-%d").date()
+        return max((_date.today() - posted).days, 0)
+    except (ValueError, TypeError):
+        return -1
 
 # =============================================================
 # SIMPLE SIDEBAR
@@ -261,6 +302,42 @@ if st.session_state["selected_page"] == "🏠 Home & Progress":
     sc3.metric("Client Replies", pipeline_kpis["replies_count"] + pipeline_kpis["interviews_count"])
     sc4.metric("Jobs Won", pipeline_kpis["won_count"])
 
+    # ---- Top opportunities to apply right now (Stage 3) ----
+    all_jobs_df = jm.get_jobs(include_samples=include_samples)
+    if not all_jobs_df.empty:
+        cand = all_jobs_df.copy()
+        cand["risk_list"] = cand["risk_flags"].apply(parse_risk_flags)
+        # Exclude jobs with SEVERE flags only (soft warnings like rush/staleness are OK)
+        cand = cand[
+            (cand["status"].isin(["discovered", "shortlisted"]))
+            & (cand["risk_list"].apply(lambda rl: not any(not is_soft_warning(r) for r in rl)))
+            & (cand["score"] >= 50)
+        ].sort_values("score", ascending=False).head(3)
+
+        if not cand.empty:
+            st.markdown("---")
+            st.markdown("### 🏆 Top Excel Jobs to Apply for Right Now")
+            st.caption("Best-scoring, risk-free opportunities waiting in your repository — fresh leads lose value every day!")
+            top_cols = st.columns(3)
+            for i, (_, top_job) in enumerate(cand.iterrows()):
+                with top_cols[i]:
+                    tscore = int(top_job.get("score", 0) or 0)
+                    tbudget = float(top_job.get("budget", 0) or 0)
+                    st.markdown(f"""
+                    <div class="app-card" style="border-left: 4px solid #059669;">
+                        <div style="font-weight: 700; color: #0F172A;">{top_job['title'][:70]}</div>
+                        <div style="margin-top: 6px;">
+                            <span class="badge badge-green">Score {tscore}/100</span>
+                            <span class="badge badge-blue">{top_job['platform']}</span>
+                            <span class="badge badge-gray" style="margin-left:2px;">{fmt_inr(tbudget) if tbudget > 0 else 'Budget TBD'}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("Work on this one 👉", key=f"top_job_{top_job['id']}", use_container_width=True):
+                        st.session_state["active_job_id"] = top_job["id"]
+                        st.session_state["selected_page"] = "🎯 Job Assistant (Advice & Proposal)"
+                        st.rerun()
+
 # =============================================================
 # 2. FIND EXCEL JOBS
 # =============================================================
@@ -275,12 +352,50 @@ elif st.session_state["selected_page"] == "🔍 Find Excel Jobs":
     tab_find, tab_paste = st.tabs(["⚡ Search Public Sources", "🔗 Paste a Job Link / Description"])
 
     with tab_find:
-        st.write("Click this button to check Freelancer.com and remote feeds for new Excel work:")
+        st.write("Click this button to scan Freelancer.com plus 4 free remote job feeds (Remotive, RemoteOK, Jobicy, Working Nomads) for fresh Excel work:")
         if st.button("🚀 Find New Excel Jobs Now", type="primary"):
-            with st.spinner("Searching for Excel jobs..."):
+            with st.spinner("Scanning 5 live sources for fresh Excel jobs..."):
                 engine = DiscoveryEngine()
-                res = engine.run_discovery_scan()
-                st.success(f"Done! {res['summary']}")
+                res = engine.run_discovery_scan(max_per_source=20)
+                st.session_state["last_scan_result"] = res
+                st.rerun()
+
+        # Persistent scan report (survives the rerun)
+        last_scan = st.session_state.get("last_scan_result")
+        if last_scan:
+            if last_scan.get("jobs_imported", 0) > 0:
+                st.success(
+                    f"✅ Scan done! **{last_scan['jobs_imported']} new Excel job(s) imported**, "
+                    f"{last_scan['duplicates_skipped']} duplicates skipped, "
+                    f"{last_scan['irrelevant_skipped']} non-Excel postings filtered out."
+                )
+                with st.expander("📊 Per-source scan breakdown"):
+                    ps = last_scan.get("per_source", {})
+                    if ps:
+                        hdr = st.columns([3, 1, 1, 1, 1])
+                        hdr[0].caption("Source")
+                        hdr[1].caption("Found")
+                        hdr[2].caption("Imported")
+                        hdr[3].caption("Junk filtered")
+                        hdr[4].caption("Dupes")
+                        for name, s in ps.items():
+                            row = st.columns([3, 1, 1, 1, 1])
+                            row[0].caption(name)
+                            row[1].caption(str(s.get("found", 0)))
+                            row[2].caption(str(s.get("imported", 0)))
+                            row[3].caption(str(s.get("irrelevant", 0)))
+                            row[4].caption(str(s.get("duplicates", 0)))
+                    if last_scan.get("error_logs"):
+                        for log in last_scan["error_logs"]:
+                            st.caption(f"⚠️ {log}")
+            else:
+                st.info(
+                    f"Scan complete — no new jobs this time ({last_scan['duplicates_skipped']} duplicates, "
+                    f"{last_scan['irrelevant_skipped']} non-Excel postings filtered). Try again later; fresh "
+                    f"Excel projects are posted every day."
+                )
+            if st.button("Clear this report", key="btn_clear_scan"):
+                st.session_state["last_scan_result"] = None
                 st.rerun()
 
         st.markdown("---")
@@ -288,10 +403,72 @@ elif st.session_state["selected_page"] == "🔍 Find Excel Jobs":
         jobs_df = jm.get_jobs(include_samples=include_samples)
 
         if not jobs_df.empty:
-            for _, job in jobs_df.iterrows():
+            # ---- Filters & sorting ----
+            jobs_df["risk_list"] = jobs_df["risk_flags"].apply(parse_risk_flags)
+            f_col1, f_col2, f_col3, f_col4 = st.columns([2, 2, 2, 2])
+            with f_col1:
+                sort_by = st.selectbox("Sort by", ["Best match (score)", "Newest first", "Highest budget", "Most risky last"], key="sort_jobs")
+            with f_col2:
+                prio_filter = st.selectbox("Priority", ["All", "High", "Medium", "Low"], key="filter_prio")
+            with f_col3:
+                search_kw = st.text_input("Search title/description", key="search_jobs", placeholder="e.g. dashboard, vba...")
+            with f_col4:
+                hide_risky = st.checkbox("Hide risky jobs", value=False, key="hide_risky", help="Hides jobs with fraud/scam warnings.")
+
+            view_df = jobs_df.copy()
+            if prio_filter != "All":
+                view_df = view_df[view_df["priority"] == prio_filter]
+            if hide_risky:
+                view_df = view_df[view_df["risk_list"].apply(len) == 0]
+            if search_kw.strip():
+                kw = search_kw.strip().lower()
+                view_df = view_df[
+                    view_df["title"].str.lower().str.contains(kw, na=False)
+                    | view_df["description"].str.lower().str.contains(kw, na=False)
+                ]
+
+            if sort_by == "Best match (score)":
+                view_df = view_df.sort_values("score", ascending=False)
+            elif sort_by == "Newest first":
+                view_df = view_df.sort_values("id", ascending=False)
+            elif sort_by == "Highest budget":
+                view_df = view_df.sort_values("budget", ascending=False)
+            else:
+                view_df = view_df.assign(_rl=view_df["risk_list"].apply(len)).sort_values("_rl")
+
+            # ---- Job cards ----
+            max_shown = 25
+            show_all = False
+            if len(view_df) > max_shown:
+                show_all = st.toggle(f"Show all {len(view_df)} jobs (first {max_shown} displayed)", value=False, key="show_all_jobs")
+
+            for _, job in (view_df if show_all else view_df.head(max_shown)).iterrows():
                 is_demo = job["is_sample"] == 1
                 demo_tag = "<span class='badge badge-amber'>DEMO</span>" if is_demo else "<span class='badge badge-green'>REAL JOB</span>"
-                budget_str = f"₹{job['budget']:,.0f} {job['currency']}" if job['budget'] > 0 else "Budget not specified"
+
+                score = int(job.get("score", 0) or 0)
+                score_cls = "badge-green" if score >= 70 else ("badge-amber" if score >= 50 else "badge-red")
+                prio = job.get("priority", "Medium")
+                prio_cls = "badge-green" if prio == "High" else ("badge-amber" if prio == "Medium" else "badge-red")
+
+                budget_val = float(job.get("budget", 0) or 0)
+                budget_str = fmt_inr(budget_val) if budget_val > 0 else "Budget not specified"
+
+                risks = job.get("risk_list", [])
+                severe = [r for r in risks if not is_soft_warning(r)]
+                soft = [r for r in risks if is_soft_warning(r)]
+                risk_html = ""
+                if severe:
+                    sev_items = "".join(f"<li>{str(r)}</li>" for r in severe)
+                    risk_html += f"<div class='risk-box'><b>🚫 Fraud / safety warnings ({len(severe)}):</b><ul>{sev_items}</ul></div>"
+                if soft:
+                    soft_items = "".join(f"<li>{str(r)}</li>" for r in soft)
+                    risk_html += f"""<div style='background:#FFFBEB; border:1px dashed #FDE68A; border-radius:8px; padding:8px 12px; margin-top:8px; font-size:0.85rem; color:#92400E;'><b>⚠️ Quality notes ({len(soft)}):</b><ul style='margin:4px 0 0 18px; padding:0;'>{soft_items}</ul></div>"""
+
+                age = job_age_days(job.get("date_posted"))
+                age_str = "today" if age == 0 else (f"{age}d ago" if age > 0 else "—")
+                cat = job.get("category") or ""
+                cat_tag = f"<span class='badge badge-purple'>{cat}</span>" if cat else ""
 
                 with st.container():
                     st.markdown(f"""
@@ -299,15 +476,23 @@ elif st.session_state["selected_page"] == "🔍 Find Excel Jobs":
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                             <div>
                                 <span style="font-size: 1.15rem; font-weight: 700; color: #0F172A;">{job['title']}</span>
-                                <div style="margin-top: 4px;">{demo_tag} <span class="badge badge-blue">{job['platform']}</span> <span class="badge badge-gray">Posted: {job.get('date_posted', 'Recent')}</span></div>
+                                <div style="margin-top: 4px;">
+                                    {demo_tag}
+                                    <span class="badge {score_cls}">Score {score}/100</span>
+                                    <span class="badge {prio_cls}">{prio} priority</span>
+                                    <span class="badge badge-blue">{job['platform']}</span>
+                                    {cat_tag}
+                                    <span class="badge badge-gray">Posted: {job.get('date_posted') or 'Recent'} ({age_str})</span>
+                                </div>
                             </div>
-                            <div style="font-size: 1.2rem; font-weight: 800; color: #059669;">
+                            <div style="font-size: 1.2rem; font-weight: 800; color: #059669; text-align: right;">
                                 {budget_str}
                             </div>
                         </div>
                         <p style="color: #475569; font-size: 0.9rem; margin-top: 10px; line-height: 1.5;">
-                            {job.get('description', '')[:220]}...
+                            {str(job.get('description', ''))[:220]}...
                         </p>
+                        {risk_html}
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -381,6 +566,28 @@ elif st.session_state["selected_page"] == "🎯 Job Assistant (Advice & Proposal
 
         st.markdown("---")
 
+        # 0. Fraud / risk warnings from the evaluation engine
+        job_risks = parse_risk_flags(job_row.get("risk_flags"))
+        severe_risks = [r for r in job_risks if not is_soft_warning(r)]
+        soft_risks = [r for r in job_risks if is_soft_warning(r)]
+        if severe_risks:
+            sev_items = "".join(f"<li>{str(r)}</li>" for r in severe_risks)
+            st.markdown(f"""
+            <div class="risk-box">
+                <b>🚫 Fraud / safety warnings ({len(severe_risks)}):</b>
+                <ul>{sev_items}</ul>
+                <div style="margin-top:6px; font-size:0.85rem;">Read these carefully before sending any proposal. Jobs demanding deposits, off-platform payments or unpaid trials should be avoided.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        if soft_risks:
+            soft_items = "".join(f"<li>{str(r)}</li>" for r in soft_risks)
+            st.markdown(f"""
+            <div style="background:#FFFBEB; border:1px dashed #FDE68A; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:0.88rem; color:#92400E;">
+                <b>⚠️ Quality notes ({len(soft_risks)}):</b>
+                <ul style="margin:4px 0 0 18px; padding:0;">{soft_items}</ul>
+            </div>
+            """, unsafe_allow_html=True)
+
         # 1. Plain English Recommendation Banner
         rec = analysis["recommendation"]
         score = analysis["suitability_score"]
@@ -421,9 +628,11 @@ elif st.session_state["selected_page"] == "🎯 Job Assistant (Advice & Proposal
         with c_info2:
             st.markdown("#### 💰 What Should You Charge?")
             st.write(f"• **Client's stated budget**: **{pricing['budget_display']}**")
-            st.write(f"• **Recommended quote**: **{pricing['final_quotation_job_currency']:,.2f} {pricing['currency']}**")
-            st.write(f"• **Estimated time to complete**: **{pricing['estimated_hours']} hours**")
-            st.write(f"• **Take-home earning**: **₹{pricing['net_earnings_inr']:,.2f}** (after platform fees)")
+            st.write(f"• **Recommended quote**: **{fmt_inr(pricing['final_quotation_inr'])}**")
+            st.write(f"• **Estimated time to complete**: **{pricing['estimated_hours']} hours** ({pricing['delivery_time_recommendation']})")
+            st.write(f"• **Take-home earning**: **{fmt_inr(pricing['net_earnings_inr'])}** (after {pricing['platform_fee_rate_percent']}% platform fee)")
+            if analysis.get("potential_risks"):
+                st.caption("⚠️ " + " | ".join(analysis["potential_risks"]))
 
         st.markdown("---")
 
@@ -434,7 +643,13 @@ elif st.session_state["selected_page"] == "🎯 Job Assistant (Advice & Proposal
         my_name = st.text_input("Your Name / Sign-off", value="Excel Freelancer", key="assistant_my_name")
         c_name = st.text_input("Client's Name (if mentioned in post)", placeholder="e.g. John or Sarah", key="assistant_c_name")
 
-        proposals = pi.generate_three_proposal_versions(job_row, profile, client_name=c_name, freelancer_name=my_name)
+        proposals = pi.generate_three_proposal_versions(
+            job_row, profile, client_name=c_name, freelancer_name=my_name,
+            pricing_info={
+                "final_quotation_inr": pricing["final_quotation_inr"],
+                "delivery_time_recommendation": pricing["delivery_time_recommendation"]
+            }
+        )
 
         p_style = st.radio("Choose proposal style:", [
             "⚡ Short & Direct (Best for quick messages)",
@@ -459,7 +674,7 @@ elif st.session_state["selected_page"] == "🎯 Job Assistant (Advice & Proposal
                     job_id=selected_job_id,
                     platform=job_row.get("platform", "Freelancer"),
                     proposal_text=final_proposal,
-                    bid_amount=float(pricing["final_quotation_job_currency"] * (85.0 if pricing["currency"] in ["USD", "EUR"] else 1.0)),
+                    bid_amount=float(pricing["final_quotation_inr"]),  # repository is INR-normalized
                     status="Submitted",
                     project_title=job_row.get("title", "")
                 )

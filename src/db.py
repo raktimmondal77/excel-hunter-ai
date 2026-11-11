@@ -118,7 +118,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
     );
     """)
 
-    # Table: discovery_runs (Stage 2)
+    # Table: discovery_runs (Stage 2, extended in Stage 3)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS discovery_runs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,7 +128,8 @@ def init_db(db_path: Optional[Path] = None) -> None:
         duplicates_skipped INTEGER DEFAULT 0,
         errors_logged INTEGER DEFAULT 0,
         status TEXT DEFAULT 'completed',
-        summary_notes TEXT
+        summary_notes TEXT,
+        irrelevant_skipped INTEGER DEFAULT 0
     );
     """)
 
@@ -183,6 +184,9 @@ def init_db(db_path: Optional[Path] = None) -> None:
     # platform_accounts table extensions
     add_col_if_missing("platform_accounts", "connection_status", "TEXT DEFAULT 'Not Connected'")
     add_col_if_missing("platform_accounts", "last_checked_date", "TEXT")
+
+    # discovery_runs table extensions (Stage 3)
+    add_col_if_missing("discovery_runs", "irrelevant_skipped", "INTEGER DEFAULT 0")
 
     # applications table extensions (Stage 3)
     add_col_if_missing("applications", "project_title", "TEXT")

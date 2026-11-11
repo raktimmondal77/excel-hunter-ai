@@ -22,7 +22,8 @@ def generate_three_proposal_versions(
     job: Dict[str, Any],
     profile: Optional[Dict[str, Any]] = None,
     client_name: Optional[str] = None,
-    freelancer_name: str = "Excel Freelancer"
+    freelancer_name: str = "Excel Freelancer",
+    pricing_info: Optional[Dict[str, Any]] = None
 ) -> Dict[str, str]:
     """
     Generates three distinct, human-sounding, and 100% honest proposal versions:
@@ -33,6 +34,12 @@ def generate_three_proposal_versions(
     STRICT SAFETY RULE:
     Only references verified skills and portfolio projects from user's confirmed profile.
     Never invents unconfirmed skills (e.g. VBA, Python, SQL) or fabricated achievements.
+
+    PRICING (Stage 3):
+    When `pricing_info` is provided (output of the pricing assistant), each version
+    gains an honest "Investment & Timeline" line with the recommended quote and
+    delivery estimate. The numbers are only ever the pricing assistant's
+    recommendation — never invented here.
     """
     if profile is None:
         profile = get_user_profile()
@@ -86,6 +93,22 @@ def generate_three_proposal_versions(
         sample_proj = portfolio[0]
         portfolio_note = f"\nFor reference, I recently completed a similar project: '{sample_proj['project_title']}' ({sample_proj.get('skills_used', 'Excel')})."
 
+    # Honest pricing & timeline block (Stage 3). Values come exclusively from
+    # the pricing assistant — nothing is invented inside the proposal text.
+    pricing_note = ""
+    if pricing_info:
+        try:
+            quote_inr = float(pricing_info.get("final_quotation_inr") or 0)
+            delivery = str(pricing_info.get("delivery_time_recommendation") or "2-3 days")
+            if quote_inr > 0:
+                pricing_note = (
+                    f"\nInvestment & Timeline: My fixed quote for this scope is "
+                    f"₹{quote_inr:,.0f} (all inclusive), with delivery in {delivery.lower()}. "
+                    f"I am happy to adjust the scope or milestone split to fit your budget."
+                )
+        except (TypeError, ValueError):
+            pricing_note = ""
+
     # -------------------------------------------------------------
     # Version A: Short and Direct
     # -------------------------------------------------------------
@@ -99,7 +122,7 @@ My approach for your sheet:
 3. Provide a documented walkthrough so you and your team can operate it easily.
 
 Turnaround: 1–2 days. I will also test everything on sample records before final handover.
-{portfolio_note}
+{portfolio_note}{pricing_note}
 Quick question:
 {questions_formatted}
 
@@ -132,7 +155,7 @@ Phase 3: Quality Assurance & Review
 
 Clarifications to ensure an exact fit:
 {questions_formatted}
-{portfolio_note}
+{portfolio_note}{pricing_note}
 I am ready to start immediately upon receiving your file structure and can deliver a working draft within 2 to 3 days.
 
 Sincerely,
@@ -154,7 +177,7 @@ What I can guarantee for this project:
 - Clean formatting: easy-to-read numbers, neat borders, and clear headers.
 
 Estimated delivery: 1–2 days.
-{portfolio_note}
+{portfolio_note}{pricing_note}
 To get started on the right foot:
 {questions_formatted}
 

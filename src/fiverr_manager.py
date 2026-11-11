@@ -1,6 +1,6 @@
 import sqlite3
 import pandas as pd
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from src.db import get_connection
 from src.job_manager import add_job
 

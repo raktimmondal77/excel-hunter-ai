@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from src.db import get_connection
 from src.evaluation import evaluate_job
+from src.currency import to_inr, normalize_currency_code
 
 def normalize_title(title: str) -> str:
     """Normalizes a title for deduplication: lowercase, strips punctuation, removes common filler words."""
@@ -86,6 +87,20 @@ def add_job(
         except (ValueError, TypeError):
             budget = 0.0
 
+        # ----------------------------------------------------------
+        # Currency normalization (Stage 3): every budget stored in the
+        # repository is converted to INR once, at the boundary, so that
+        # scoring, pricing and the ₹10k-20k goal always compare like with
+        # like. The original amount is preserved inside client_info.
+        # ----------------------------------------------------------
+        currency = normalize_currency_code(job_data.get("currency", "INR"))
+        client_info = str(job_data.get("client_info", "") or "")
+        if currency != "INR" and budget > 0:
+            original_note = f"Original budget: {budget:,.2f} {currency}"
+            client_info = f"{client_info} | {original_note}".strip(" |")
+            budget = to_inr(budget, currency)
+            currency = "INR"
+
         # Check duplicate
         is_dup, dup_reason = is_duplicate_job(conn, title, platform, url)
         if is_dup:
@@ -97,11 +112,16 @@ def add_job(
         risk_flags = job_data.get("risk_flags")
         category = job_data.get("category")
 
-        client_info = job_data.get("client_info", "")
         deadline = job_data.get("deadline", "")
+        date_posted = str(job_data.get("date_posted", "") or "")
 
         if auto_evaluate or score is None:
-            eval_res = evaluate_job(title, description, budget, client_info=client_info, deadline_text=deadline)
+            eval_res = evaluate_job(
+                title, description, budget,
+                client_info=client_info, deadline_text=deadline,
+                currency="INR",  # already normalized above
+                date_posted=date_posted
+            )
             if len(eval_res) == 4:
                 eval_score, eval_priority, eval_risks, eval_cat = eval_res
                 category = category or eval_cat
@@ -113,8 +133,6 @@ def add_job(
         elif isinstance(risk_flags, list):
             risk_flags = json.dumps(risk_flags)
 
-        currency = job_data.get("currency", "INR") or "INR"
-        date_posted = job_data.get("date_posted", "")
         status = job_data.get("status", "discovered")
         is_sample = int(job_data.get("is_sample", 0))
         notes = job_data.get("notes", "")
@@ -363,10 +381,10 @@ def delete_sample_data() -> Tuple[int, int]:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    # Explicitly filter strictly is_sample = 1
-    cursor.execute("DELETE FROM jobs WHERE is_sample = 1 AND is_sample != 0 AND is_sample IS NOT NULL")
+    # Explicitly filter strictly is_sample = 1 (real records are never touched)
+    cursor.execute("DELETE FROM jobs WHERE is_sample = 1")
     jobs_deleted = cursor.rowcount
-    cursor.execute("DELETE FROM earnings WHERE is_sample = 1 AND is_sample != 0 AND is_sample IS NOT NULL")
+    cursor.execute("DELETE FROM earnings WHERE is_sample = 1")
     earnings_deleted = cursor.rowcount
     conn.commit()
     conn.close()

@@ -47,6 +47,10 @@ class BaseSourceAdapter(ABC):
         self.source_id = source_id
         self.source_name = source_name
         self.is_enabled = is_enabled
+        # Stage 3 transparency: how many raw postings this adapter rejected
+        # during its last fetch (junk / full-time / off-topic). The engine
+        # merges this into the per-source scan report.
+        self.filtered_count = 0
 
     @abstractmethod
     def fetch_jobs(self, search_terms: List[str], max_results: int = 10) -> List[StandardJob]:
