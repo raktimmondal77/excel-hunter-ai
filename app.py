@@ -24,6 +24,8 @@ from src.discovery.universal_importer import (
 )
 from src.sample_data import seed_sample_data
 from src.evaluation import is_soft_warning
+import streamlit.components.v1 as components
+from src.ui_components import get_match_gauge_html, get_copy_box_html, get_income_simulator_html
 
 # Page setup
 st.set_page_config(
@@ -78,10 +80,32 @@ st.markdown("""
     .app-card {
         background: #FFFFFF;
         border: 1px solid #E2E8F0;
-        border-radius: 12px;
+        border-radius: 14px;
         padding: 20px;
         margin-bottom: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 1px 2px rgba(0,0,0,0.03);
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .app-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+        border-color: #94A3B8;
+    }
+
+    /* Pulsing beacon */
+    .pulsing-dot {
+        width: 8px;
+        height: 8px;
+        background-color: #10B981;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+        animation: pulse-beacon 2s infinite;
+    }
+    @keyframes pulse-beacon {
+        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+        70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
 
     /* Recommendation banners */
@@ -211,6 +235,11 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption("🔒 100% Free & Local • No subscriptions • Private SQLite database")
+    st.markdown("""
+    <div style="margin-top: 10px; display: flex; align-items: center; font-size: 0.78rem; font-weight: 700; color: #047857;">
+        <span class="pulsing-dot"></span> 6 Discovery Sources Live
+    </div>
+    """, unsafe_allow_html=True)
 
 # Helper to format INR
 def fmt_inr(val: float) -> str:
@@ -252,6 +281,9 @@ if st.session_state["selected_page"] == "🏠 Home & Progress":
             st.caption(f"👉 You need **{fmt_inr(summary['gap_to_max'])}** more to reach your top target.")
         else:
             st.success("🌟 Congratulations! You reached your stretch goal!")
+
+    # Interactive JavaScript Income Simulator
+    components.html(get_income_simulator_html(summary["total_net"], TARGET_MIN_INR, TARGET_MAX_INR), height=310)
 
     st.markdown("---")
 
@@ -588,31 +620,10 @@ elif st.session_state["selected_page"] == "🎯 Job Assistant (Advice & Proposal
             </div>
             """, unsafe_allow_html=True)
 
-        # 1. Plain English Recommendation Banner
+        # 1. Plain English Recommendation Banner with Glowing Animated Radial SVG Match Gauge
         rec = analysis["recommendation"]
         score = analysis["suitability_score"]
-
-        if rec == "Apply":
-            st.markdown(f"""
-            <div class="rec-box-apply">
-                <h3 style="margin: 0; color: #065F46;">✅ Yes! You should apply for this job. (Match Score: {score}/100)</h3>
-                <p style="margin: 8px 0 0 0; font-size: 0.95rem;">{analysis['reasoning']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        elif rec == "Apply after learning something":
-            st.markdown(f"""
-            <div class="rec-box-learn">
-                <h3 style="margin: 0; color: #92400E;">💡 You can do this with a little preparation. (Match Score: {score}/100)</h3>
-                <p style="margin: 8px 0 0 0; font-size: 0.95rem;">{analysis['reasoning']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="rec-box-avoid">
-                <h3 style="margin: 0; color: #991B1B;">⚠️ Not recommended right now. (Match Score: {score}/100)</h3>
-                <p style="margin: 8px 0 0 0; font-size: 0.95rem;">{analysis['reasoning']}</p>
-            </div>
-            """, unsafe_allow_html=True)
+        components.html(get_match_gauge_html(score, rec, analysis["reasoning"]), height=175)
 
         # 2. Simple Checklist
         c_info1, c_info2 = st.columns(2)
@@ -665,6 +676,9 @@ elif st.session_state["selected_page"] == "🎯 Job Assistant (Advice & Proposal
             prop_text = proposals["version_c"]
 
         final_proposal = st.text_area("Your Proposal (You can edit anything here before copying):", value=prop_text, height=260)
+
+        # Interactive 1-click JavaScript copy with floating toast
+        components.html(get_copy_box_html(final_proposal, "Ready-to-Send Proposal"), height=75)
 
         # One click to record submission
         col_act1, col_act2 = st.columns([2, 3])
@@ -759,6 +773,7 @@ elif st.session_state["selected_page"] == "📬 My Applications & Follow-ups":
 
                 fu_msg = at.generate_follow_up_message(r_data["job_title"], client_name=r_data.get("client_name"), stage=1)
                 st.text_area("Copy this polite message to your clipboard:", value=fu_msg, height=180)
+                components.html(get_copy_box_html(fu_msg, "Follow-up Message Ready to Copy"), height=75)
                 st.caption("Paste this message directly into your chat with the client.")
             else:
                 st.info("No pending applications need a follow-up right now.")
