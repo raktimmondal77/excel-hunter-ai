@@ -1,0 +1,6 @@
+@echo off
+title Excel Hunter AI Dashboard
+echo Starting Excel Hunter AI...
+echo Opening in your web browser...
+python -m streamlit run app.py
+pause
